@@ -1,0 +1,6 @@
+PiPOS Privacy Policy
+
+1. Introduction: Welcome to PiPOS. We respect your privacy and are committed to protecting your personal data.
+2. Data We Collect: When you sign in using your Pi Network account, we collect your unique Pi Username (pi_username) and profile details required to authenticate your sessions. We also store business-related data such as shop names, staff sub-accounts, and sales records required for your store operations.
+3. How We Use Your Data: Your data is used exclusively to provide, maintain, and synchronize your multi-portal activities securely via Supabase. We do not sell or trade your personal identification information.
+4. Security: We implement robust security measures, including database-level Foreign Key constraints, to protect your business data.

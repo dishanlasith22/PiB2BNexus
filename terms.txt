@@ -1,0 +1,6 @@
+PiPOS Terms of Service
+
+1. Acceptance of Terms: By accessing and using the PiPOS application, you agree to comply with and be bound by these Terms of Service. If you do not agree, please do not use the application.
+2. Pi Network Authentication: Access to PiPOS is facilitated through the Pi Network SDK. You are responsible for maintaining the security of your Pi account and wallet.
+3. User Responsibilities: As a shop owner or staff member, you agree to input accurate business and sales data. You are solely responsible for all activities conducted under your pi_username.
+4. Service Modifications: We reserve the right to modify, suspend, or discontinue the PiPOS platform or any features at any time without prior notice during this development and testing phase.
