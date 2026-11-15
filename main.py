@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="PiPOS B2B2C Platform", page_icon="🛍️", layout="wide")
 
@@ -16,13 +17,54 @@ st.sidebar.markdown("---")
 
 if not st.session_state.pi_authenticated:
     st.sidebar.warning("🔒 Please sign in with Pi Network.")
-    pi_user_input = st.sidebar.text_input("Enter Pi Username")
-    if st.sidebar.button("Sign in with Pi & Verify KYC", type="primary"):
-        if pi_user_input:
-            st.session_state.pi_authenticated = True
-            st.session_state.username = pi_user_input
-            st.success(f"Welcome, {pi_user_input}!")
-            st.rerun()
+    
+    # Pi Network SDK JavaScript Authentication Component
+    pi_auth_html = """
+    <div style="text-align: center; font-family: sans-serif; padding: 5px;">
+        <button id="pi-signin-btn" style="background-color: #7b1fa2; color: white; padding: 10px 15px; border: none; border-radius: 5px; font-size: 14px; font-weight: bold; cursor: pointer; width: 100%;">
+            Sign in with Pi
+        </button>
+        <p id="pi-status" style="margin-top: 8px; font-size: 12px; color: #555;"></p>
+    </div>
+
+    <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+    <script>
+        const Pi = window.Pi;
+        // Sandbox mode true කර ඇත. Mainnet යද්දී false කළ යුතුය.
+        Pi.init({ version: "2.0", sandbox: true });
+
+        document.getElementById('pi-signin-btn').onclick = async function() {
+            const scopes = ['username', 'payments'];
+            
+            function onIncompletePaymentFound(payment) {
+                console.log("Incomplete payment found:", payment);
+            }
+
+            try {
+                const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
+                document.getElementById('pi-status').innerText = "Success: " + auth.user.username;
+                
+                // Streamlit වෙතට username එක යැවීම
+                const data = { type: 'streamlit:setComponentValue', value: auth.user.username };
+                window.parent.postMessage(data, '*');
+            } catch (error) {
+                console.error(error);
+                document.getElementById('pi-status').innerText = "Auth Failed!";
+            }
+        };
+    </script>
+    """
+    
+    # HTML component එක සයිඩ්බාර් එකේ පෙන්වීම
+    pi_logged_username = components.html(pi_auth_html, height=120)
+    
+    # JavaScript එකෙන් Pi Username එක ලැබުණු පසු Session State යාවත්කාලීන කිරීම
+    if pi_logged_username and isinstance(pi_logged_username, str) and len(pi_logged_username) > 0:
+        st.session_state.pi_authenticated = True
+        st.session_state.username = pi_logged_username.strip()
+        st.success(f"Welcome, {st.session_state.username}!")
+        st.rerun()
+
 else:
     st.sidebar.success(f"🟢 Connected: {st.session_state.username}")
     role_choice = st.sidebar.selectbox("Switch Role", ["Customer", "Shop Owner ", "Dealer "])
@@ -52,7 +94,7 @@ else:
         import dealer
         dealer.render_page()
 
-     # ==========================================
+# ==========================================
 # PiPOS Footer - Privacy Policy & Terms Links
 # ==========================================
 st.markdown("---")
