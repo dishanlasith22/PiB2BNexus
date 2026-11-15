@@ -2,3 +2,8 @@ streamlit
 flask
 requests
 pandas
+supabase
+numpy
+pyzbar
+python-dotenv
+opencv-python-headless
