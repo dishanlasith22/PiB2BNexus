@@ -46,7 +46,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 
   async function ensurePiReady(){
     if(!window.Pi) throw new Error("Pi SDK did not load. Open the app in Pi Browser or Pi Desktop Sandbox.");
-    if(!piInitPromise) piInitPromise=window.Pi.init({version:"2.0"});
+    if(!piInitPromise) piInitPromise=window.Pi.init({version:"2.0",sandbox:true});
     await piInitPromise;
   }
   async function backendPost(path, token, body){
