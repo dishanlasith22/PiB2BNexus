@@ -32,3 +32,19 @@
 - Payments: https://developers.minepi.com/docs/accept-payment/Payments
 - Platform API: https://developers.minepi.com/docs/api-reference/PlatformAPI
 - SDK reference: https://developers.minepi.com/docs/api-reference/SdkReference
+
+
+## Pi Authentication update (App Studio login exchange)
+
+The current code now sends only the Pi SDK `accessToken` to the FastAPI backend at `/auth/login`. The backend exchanges it with Pi App Studio at `https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login`, trusts only the returned `user.uid` and `user.username`, and issues a short-lived signed app session. Browser-supplied uid/username are not accepted. The App Studio `sessionToken` is not exposed to the browser.
+
+Render backend environment variables:
+- `PI_SESSION_SECRET`: random secret, at least 32 characters (required for app login). Generate a new unique secret and keep it private.
+- `PI_API_KEY`: needed only if Pi payments are enabled; not used for sign-in.
+- `PI_SANDBOX`: keep `true` while testing in Pi Sandbox. SDK sandbox flag is intentionally not passed to `Pi.init`; the SDK detects its environment.
+- `PI_PAYMENT_AMOUNT` and `PI_PAYMENT_MEMO`: payment test configuration only.
+
+Streamlit service:
+- `PI_BACKEND_URL=https://pib2bnexus-pi-backend.onrender.com` (use your actual backend hostname).
+
+After adding `PI_SESSION_SECRET`, redeploy the FastAPI backend and Streamlit service. Authentication must be tested in the registered Pi Sandbox app using its development URL; ordinary desktop Chrome is not a valid Pi sign-in test. This package has not been live-verified in Pi Sandbox.

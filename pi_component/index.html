@@ -16,7 +16,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 <body>
 <div class="wrap">
   <button id="login">Sign in with Pi</button>
-  <div id="status" class="status">Use Pi Browser. Authentication is verified by the app server.</div>
+  <div id="status" class="status">Open this app in Pi Browser or Pi Desktop Sandbox.</div>
   <button id="pay" disabled>Pay with Pi</button>
   <div class="small" id="payhint"></div>
 </div>
@@ -28,35 +28,32 @@ button:disabled{opacity:.55;cursor:not-allowed}
   const payhint=document.getElementById("payhint");
   let args={};
   let currentValue=null;
-  function send(type, extra={}) {
-    window.parent.postMessage({isStreamlitMessage:true,type,...extra}, "*");
-  }
-  function setValue(value) {
-    currentValue=value;
-    send("streamlit:setComponentValue",{value, dataType:"json"});
-  }
+  let piInitPromise=null;
+  function send(type, extra={}) { window.parent.postMessage({isStreamlitMessage:true,type,...extra}, "*"); }
+  function setValue(value) { currentValue=value; send("streamlit:setComponentValue",{value,dataType:"json"}); }
   function height(){send("streamlit:setFrameHeight",{height:150});}
-  send("streamlit:componentReady",{apiVersion:1});
-  height();
+  send("streamlit:componentReady",{apiVersion:1}); height();
 
-  window.addEventListener("message", async (event)=>{
+  window.addEventListener("message",(event)=>{
     const msg=event.data||{};
     if(msg.type==="streamlit:render"){
-      args=msg.args||{};
-      currentValue=msg.value||currentValue;
-      pay.disabled=!(args.access_token && args.payment_enabled);
-      payhint.textContent=args.payment_enabled
-        ? ("Demo payment amount: "+args.payment_amount+" Pi")
-        : "Payments are disabled until a server-side amount is configured.";
+      args=msg.args||{}; currentValue=msg.value||currentValue;
+      pay.disabled=!(args.app_session_token && args.payment_enabled);
+      payhint.textContent=args.payment_enabled ? ("Configured payment: "+args.payment_amount+" Pi") : "Payments are disabled until a server-side amount is configured.";
       height();
     }
   });
 
+  async function ensurePiReady(){
+    if(!window.Pi) throw new Error("Pi SDK did not load. Open the app in Pi Browser or Pi Desktop Sandbox.");
+    if(!piInitPromise) piInitPromise=window.Pi.init({version:"2.0"});
+    await piInitPromise;
+  }
   async function backendPost(path, token, body){
+    const headers={"Content-Type":"application/json"};
+    if(token) headers["Authorization"]="Bearer "+token;
     const response=await fetch((args.backend_url||"").replace(/\/$/,"")+path,{
-      method:"POST",
-      headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-      body:JSON.stringify(body||{})
+      method:"POST",headers,body:JSON.stringify(body||{})
     });
     const result=await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(result.detail||"Backend request failed");
@@ -66,49 +63,47 @@ button:disabled{opacity:.55;cursor:not-allowed}
   login.addEventListener("click",async()=>{
     login.disabled=true; status.textContent="Connecting to Pi...";
     try{
-      if(!window.Pi) throw new Error("Pi SDK unavailable. Open this website in Pi Browser.");
       if(!args.backend_url) throw new Error("PI_BACKEND_URL is not configured.");
-      window.Pi.init({version:"2.0",sandbox:!!args.sandbox});
-      const auth=await window.Pi.authenticate(["username","payments"],function(payment){
-        // Incomplete payment is surfaced to the backend/operator for reconciliation.
-        console.warn("Incomplete Pi payment:",payment);
+      await ensurePiReady();
+      const auth=await window.Pi.authenticate(["username"],function(payment){
+        console.warn("Incomplete Pi payment requires reconciliation:",payment);
       });
-      const verified=await backendPost("/auth/verify",auth.accessToken,{});
-      setValue({auth_token:auth.accessToken,uid:verified.uid,username:verified.username,verified:true});
-      status.textContent="Verified Pioneer: @"+verified.username;
+      if(!auth || !auth.accessToken) throw new Error("Pi did not return an access token.");
+      status.textContent="Verifying your Pi account with App Studio...";
+      // One server-side exchange per sign-in. Browser-supplied uid/username are never sent.
+      const verified=await backendPost("/auth/login",null,{accessToken:auth.accessToken});
+      if(!verified.app_session_token || !verified.user || !verified.user.uid || !verified.user.username)
+        throw new Error("App Studio did not return a verified identity.");
+      setValue({app_session_token:verified.app_session_token,uid:verified.user.uid,username:verified.user.username,verified:true});
+      status.textContent="Verified Pioneer: @"+verified.user.username;
       pay.disabled=!args.payment_enabled;
     }catch(e){status.textContent="Sign-in failed: "+(e.message||String(e));}
     finally{login.disabled=false;}
   });
 
   pay.addEventListener("click",async()=>{
-    const token=(currentValue&&currentValue.auth_token)||args.access_token;
+    const token=(currentValue&&currentValue.app_session_token)||args.app_session_token;
     if(!token){status.textContent="Sign in first.";return;}
     if(!args.payment_enabled){status.textContent="Payments are not configured.";return;}
     pay.disabled=true; status.textContent="Starting Pi Wallet payment...";
     try{
+      await ensurePiReady();
       window.Pi.createPayment({
-        amount:Number(args.payment_amount),
-        memo:args.payment_memo||"PIB2BNexus test purchase",
+        amount:Number(args.payment_amount),memo:args.payment_memo||"PIB2BNexus test purchase",
         metadata:{app:"PIB2BNexus",purpose:"configured_demo_payment"}
       },{
         onReadyForServerApproval:async(paymentId)=>{
-          try{
-            await backendPost("/payments/approve",token,{paymentId});
-            status.textContent="Payment approved by app server. Confirm in Pi Wallet.";
-          }catch(e){status.textContent="Approval failed: "+e.message;pay.disabled=false;}
+          try{await backendPost("/payments/approve",token,{paymentId});status.textContent="Payment approved by app server. Confirm in Pi Wallet.";}
+          catch(e){status.textContent="Approval failed: "+e.message;pay.disabled=false;}
         },
         onReadyForServerCompletion:async(paymentId,txid)=>{
-          try{
-            const result=await backendPost("/payments/complete",token,{paymentId,txid});
-            if(result.ok){
-              status.textContent="Pi payment completed and verified. ID: "+paymentId;
-              setValue({...(currentValue||{}),last_payment_id:paymentId,payment_verified:true});
-            }else{throw new Error("Payment completion not verified");}
+          try{const result=await backendPost("/payments/complete",token,{paymentId,txid});
+            if(result.ok){status.textContent="Pi payment completed and verified. ID: "+paymentId;setValue({...currentValue,last_payment_id:paymentId,payment_verified:true});}
+            else throw new Error("Payment completion not verified");
           }catch(e){status.textContent="Completion failed: "+e.message;}
           finally{pay.disabled=false;}
         },
-        onCancel:(paymentId)=>{status.textContent="Payment cancelled.";pay.disabled=false;},
+        onCancel:()=>{status.textContent="Payment cancelled.";pay.disabled=false;},
         onError:(error)=>{status.textContent="Pi payment error: "+(error&&error.message||String(error));pay.disabled=false;}
       });
     }catch(e){status.textContent="Could not start payment: "+e.message;pay.disabled=false;}
