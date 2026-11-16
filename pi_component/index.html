@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
+<style>
+body{font-family:Arial,sans-serif;margin:0;padding:8px;color:var(--text-color,#222)}
+.wrap{display:flex;flex-direction:column;gap:10px}
+button{border:0;border-radius:8px;padding:12px 14px;background:#7027a0;color:#fff;font-weight:700;cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+.status{font-size:13px;min-height:18px}
+.small{font-size:11px;opacity:.75}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <button id="login">Sign in with Pi</button>
+  <div id="status" class="status">Use Pi Browser. Authentication is verified by the app server.</div>
+  <button id="pay" disabled>Pay with Pi</button>
+  <div class="small" id="payhint"></div>
+</div>
+<script>
+(function(){
+  const login=document.getElementById("login");
+  const pay=document.getElementById("pay");
+  const status=document.getElementById("status");
+  const payhint=document.getElementById("payhint");
+  let args={};
+  let currentValue=null;
+  function send(type, extra={}) {
+    window.parent.postMessage({isStreamlitMessage:true,type,...extra}, "*");
+  }
+  function setValue(value) {
+    currentValue=value;
+    send("streamlit:setComponentValue",{value, dataType:"json"});
+  }
+  function height(){send("streamlit:setFrameHeight",{height:150});}
+  send("streamlit:componentReady",{apiVersion:1});
+  height();
+
+  window.addEventListener("message", async (event)=>{
+    const msg=event.data||{};
+    if(msg.type==="streamlit:render"){
+      args=msg.args||{};
+      currentValue=msg.value||currentValue;
+      pay.disabled=!(args.access_token && args.payment_enabled);
+      payhint.textContent=args.payment_enabled
+        ? ("Demo payment amount: "+args.payment_amount+" Pi")
+        : "Payments are disabled until a server-side amount is configured.";
+      height();
+    }
+  });
+
+  async function backendPost(path, token, body){
+    const response=await fetch((args.backend_url||"").replace(/\/$/,"")+path,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+      body:JSON.stringify(body||{})
+    });
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(result.detail||"Backend request failed");
+    return result;
+  }
+
+  login.addEventListener("click",async()=>{
+    login.disabled=true; status.textContent="Connecting to Pi...";
+    try{
+      if(!window.Pi) throw new Error("Pi SDK unavailable. Open this website in Pi Browser.");
+      if(!args.backend_url) throw new Error("PI_BACKEND_URL is not configured.");
+      window.Pi.init({version:"2.0",sandbox:!!args.sandbox});
+      const auth=await window.Pi.authenticate(["username","payments"],function(payment){
+        // Incomplete payment is surfaced to the backend/operator for reconciliation.
+        console.warn("Incomplete Pi payment:",payment);
+      });
+      const verified=await backendPost("/auth/verify",auth.accessToken,{});
+      setValue({auth_token:auth.accessToken,uid:verified.uid,username:verified.username,verified:true});
+      status.textContent="Verified Pioneer: @"+verified.username;
+      pay.disabled=!args.payment_enabled;
+    }catch(e){status.textContent="Sign-in failed: "+(e.message||String(e));}
+    finally{login.disabled=false;}
+  });
+
+  pay.addEventListener("click",async()=>{
+    const token=(currentValue&&currentValue.auth_token)||args.access_token;
+    if(!token){status.textContent="Sign in first.";return;}
+    if(!args.payment_enabled){status.textContent="Payments are not configured.";return;}
+    pay.disabled=true; status.textContent="Starting Pi Wallet payment...";
+    try{
+      window.Pi.createPayment({
+        amount:Number(args.payment_amount),
+        memo:args.payment_memo||"PIB2BNexus test purchase",
+        metadata:{app:"PIB2BNexus",purpose:"configured_demo_payment"}
+      },{
+        onReadyForServerApproval:async(paymentId)=>{
+          try{
+            await backendPost("/payments/approve",token,{paymentId});
+            status.textContent="Payment approved by app server. Confirm in Pi Wallet.";
+          }catch(e){status.textContent="Approval failed: "+e.message;pay.disabled=false;}
+        },
+        onReadyForServerCompletion:async(paymentId,txid)=>{
+          try{
+            const result=await backendPost("/payments/complete",token,{paymentId,txid});
+            if(result.ok){
+              status.textContent="Pi payment completed and verified. ID: "+paymentId;
+              setValue({...(currentValue||{}),last_payment_id:paymentId,payment_verified:true});
+            }else{throw new Error("Payment completion not verified");}
+          }catch(e){status.textContent="Completion failed: "+e.message;}
+          finally{pay.disabled=false;}
+        },
+        onCancel:(paymentId)=>{status.textContent="Payment cancelled.";pay.disabled=false;},
+        onError:(error)=>{status.textContent="Pi payment error: "+(error&&error.message||String(error));pay.disabled=false;}
+      });
+    }catch(e){status.textContent="Could not start payment: "+e.message;pay.disabled=false;}
+  });
+})();
+</script>
+</body>
+</html>

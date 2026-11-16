@@ -1,0 +1,23 @@
+PIB2BNexus Pi backend deployment (create a SECOND Render Web Service from this repository)
+
+Build command:
+pip install -r requirements.txt
+
+Start command:
+uvicorn pi_backend:app --host 0.0.0.0 --port $PORT
+
+Backend service environment variables:
+PI_API_KEY = (your Pi Server API Key; secret; backend service only)
+PI_SANDBOX = true (keep true until Developer Portal confirms production)
+PI_PAYMENT_AMOUNT = 0.01 (example Sandbox test amount only; choose a supported test amount)
+PI_PAYMENT_MEMO = PIB2BNexus demo payment
+
+Streamlit service environment variables:
+PI_BACKEND_URL = https://YOUR-SECOND-SERVICE.onrender.com
+PI_SANDBOX = true
+PI_PAYMENT_AMOUNT = same value as backend
+PI_PAYMENT_MEMO = same value as backend
+
+Do not add PI_API_KEY to Streamlit service, browser code, GitHub, or Supabase.
+The Pi payment expander is a fixed-amount integration test, NOT yet linked to shop_sales,
+stock deductions, customer QR bills, or Supabase order fulfillment.

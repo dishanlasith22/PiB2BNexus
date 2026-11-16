@@ -1,96 +1,88 @@
+import os
 import streamlit as st
-import streamlit.components.v1 as components
+from pi_integration import render_pi_component
 
 st.set_page_config(page_title="PiPOS B2B2C Platform", page_icon="🛍️", layout="wide")
 
-if 'user_role' not in st.session_state:
-    st.session_state.user_role = 'Customer'
-if 'pi_authenticated' not in st.session_state:
-    st.session_state.pi_authenticated = False
-if 'username' not in st.session_state:
-    st.session_state.username = ""
-if 'cart' not in st.session_state:
-    st.session_state.cart = []
+for key, default in {
+    "user_role": "Customer",
+    "pi_authenticated": False,
+    "username": "",
+    "pi_uid": "",
+    "pi_access_token": "",
+    "cart": [],
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 st.sidebar.title("PiPOS Ecosystem")
 st.sidebar.markdown("---")
 
+backend_url = os.getenv("PI_BACKEND_URL", "").rstrip("/")
+sandbox = os.getenv("PI_SANDBOX", "true").lower() == "true"
+payment_amount = float(os.getenv("PI_PAYMENT_AMOUNT", "0"))
+payment_memo = os.getenv("PI_PAYMENT_MEMO", "PIB2BNexus demo payment")
+payment_enabled = bool(backend_url and payment_amount > 0)
+
 if not st.session_state.pi_authenticated:
-    st.sidebar.warning("🔒 Please sign in with Pi Network.")
-    
-    # Pi Network SDK JavaScript Authentication Component
-    pi_auth_html = """
-    <div style="text-align: center; font-family: sans-serif; padding: 5px;">
-        <button id="pi-signin-btn" style="background-color: #7b1fa2; color: white; padding: 10px 15px; border: none; border-radius: 5px; font-size: 14px; font-weight: bold; cursor: pointer; width: 100%;">
-            Sign in with Pi
-        </button>
-        <p id="pi-status" style="margin-top: 8px; font-size: 12px; color: #555;"></p>
-    </div>
-
-    <script src="https://sdk.minepi.com/pi-sdk.js"></script>
-    <script>
-        const Pi = window.Pi;
-        // Sandbox mode true කර ඇත. Mainnet යද්දී false කළ යුතුය.
-        Pi.init({ version: "2.0", sandbox: true });
-
-        document.getElementById('pi-signin-btn').onclick = async function() {
-            const scopes = ['username', 'payments'];
-            
-            function onIncompletePaymentFound(payment) {
-                console.log("Incomplete payment found:", payment);
-            }
-
-            try {
-                const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
-                document.getElementById('pi-status').innerText = "Success: " + auth.user.username;
-                
-                // Streamlit වෙතට username එක යැවීම
-                const data = { type: 'streamlit:setComponentValue', value: auth.user.username };
-                window.parent.postMessage(data, '*');
-            } catch (error) {
-                console.error(error);
-                document.getElementById('pi-status').innerText = "Auth Failed!";
-            }
-        };
-    </script>
-    """
-    
-    # HTML component එක සයිඩ්බාර් එකේ පෙන්වීම
-    pi_logged_username = components.html(pi_auth_html, height=120)
-    
-    # JavaScript එකෙන් Pi Username එක ලැබުණු පසු Session State යාවත්කාලීන කිරීම
-    if pi_logged_username and isinstance(pi_logged_username, str) and len(pi_logged_username) > 0:
+    st.sidebar.warning("🔒 Sign in with Pi Network")
+    if not backend_url:
+        st.sidebar.error("PI_BACKEND_URL is missing from Render Environment Variables.")
+    result = render_pi_component(
+        backend_url=backend_url,
+        sandbox=sandbox,
+        payment_enabled=False,
+    )
+    if isinstance(result, dict) and result.get("verified") and result.get("auth_token"):
+        # Token is kept only in Streamlit server session memory, never in Supabase.
         st.session_state.pi_authenticated = True
-        st.session_state.username = pi_logged_username.strip()
+        st.session_state.pi_access_token = result["auth_token"]
+        st.session_state.pi_uid = result["uid"]
+        st.session_state.username = result["username"]
         st.success(f"Welcome, {st.session_state.username}!")
         st.rerun()
-
 else:
-    st.sidebar.success(f"🟢 Connected: {st.session_state.username}")
-    role_choice = st.sidebar.selectbox("Switch Role", ["Customer", "Shop Owner ", "Dealer "])
+    st.sidebar.success(f"🟢 Verified Pioneer: {st.session_state.username}")
+    role_choice = st.sidebar.selectbox("Switch Role", ["Customer", "Shop Owner", "Dealer"])
     if role_choice != st.session_state.user_role:
         st.session_state.user_role = role_choice
         st.rerun()
-        
+
     if st.sidebar.button("Sign Out"):
-        st.session_state.pi_authenticated = False
-        st.session_state.user_role = 'Customer'
+        for key in ("pi_authenticated", "pi_access_token", "pi_uid", "username"):
+            st.session_state[key] = False if key == "pi_authenticated" else ""
+        st.session_state.user_role = "Customer"
         st.session_state.cart = []
         st.rerun()
 
 if not st.session_state.pi_authenticated:
-    st.title("🌍 Welcome to PiPOS - World's #1 B2B2C Platform")
-    st.markdown("### The ultimate paperless, zero-credit economic ecosystem powered by Pi Network.")
-    st.info("👈 Please sign in using your Pi Network credentials on the sidebar to get started.")
+    st.title("🌍 Welcome to PiPOS – B2B2C Platform")
+    st.markdown("### A paperless business ecosystem powered by Pi Network.")
+    st.info("Open PIB2BNexus in Pi Browser and use the Sign in with Pi button.")
 else:
+    # Optional Pi payment test panel. Amount and memo are server-configured.
+    with st.expander("π Pi Wallet – configured payment test"):
+        if not payment_enabled:
+            st.warning("Pi payments are disabled until PI_PAYMENT_AMOUNT is configured on Render.")
+        pay_result = render_pi_component(
+            backend_url=backend_url,
+            sandbox=sandbox,
+            access_token=st.session_state.pi_access_token,
+            payment_enabled=payment_enabled,
+            payment_amount=payment_amount,
+            payment_memo=payment_memo,
+        )
+        if isinstance(pay_result, dict) and pay_result.get("payment_verified"):
+            st.success("Pi Platform confirmed the payment completion.")
+
     role = st.session_state.user_role
     if role == "Customer":
         import customer
         customer.render_page()
-    elif role == "Shop Owner ":
+    elif role == "Shop Owner":
         import shop
         shop.render_page()
-    elif role == "Dealer ":
+    elif role == "Dealer":
         import dealer
         dealer.render_page()
 

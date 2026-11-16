@@ -241,30 +241,15 @@ def render():
                 st.info(f"Shop ID: **{current_shop_user}** | Cashier: **{cashier_name}** | Branch: **{selected_branch}**")
                 st.markdown(f"### Amount: **Rs. {grand_total:,.2f}** (~{grand_total/1000:.2f} Pi)")
                 
-                # 🔄 Real-time Database Check (QR එක ජෙනරේට් කළ පසු නව ගනුදෙනුවක් සිදුවී ඇද්දැයි පරීක්ෂා කිරීම)
+                # A matching shop_sales row is not proof of a Pi blockchain payment.
+                # This UI remains pending until verified Pi payment records are connected.
                 payment_received = False
-                try:
-                    if hasattr(database, 'supabase'):
-                        # shop_sales ටේබල් එකෙන් අදාළ ෂොප් එකේ අන්තිම සේල් එක ලබා ගැනීම
-                        check_res = database.supabase.table("shop_sales").select("*").eq("shop_name", shop_name).order("id", desc=True).limit(1).execute()
-                        if check_res.data:
-                            latest_sale = check_res.data[0]
-                            sale_created_at = latest_sale.get("created_at") # ඩේටාබේස් එකේ රෙකෝඩ් වැටුණු වෙලාව
-                            
-                            # මුදල සමාන නම් සහ QR එක ජෙනරේට් කළ පසු මෙම සේල් එක සිදුවී ඇත්නම් පමණක් සක්සස් කිරීම
-                            if float(latest_sale.get("total_amount", 0)) == float(grand_total):
-                                if sale_created_at:
-                                    sale_time = datetime.fromisoformat(sale_created_at.replace("Z", "+00:00").split("+")[0])
-                                    if st.session_state.qr_generated_time and sale_time >= st.session_state.qr_generated_time.replace(tzinfo=None):
-                                        payment_received = True
-                except Exception as e:
-                    pass
 
                 if payment_received:
                     st.markdown("""
                         <div style="background-color: #065f46; padding: 15px; border-radius: 8px; border: 1px solid #10b981; color: #ffffff; text-align: center;">
-                            🎉 <b>PAYMENT RECEIVED SUCCESSFULLY!</b><br>
-                            <span style="font-size: 13px;">Pi blockchain transaction verified & inventory updated.</span>
+                            🎉 <b>PAYMENT RECORD FOUND</b><br>
+                            <span style="font-size: 13px;">Check the verified Pi payment ledger before fulfilling this order.</span>
                         </div>
                     """, unsafe_allow_html=True)
                     if st.button("✨ Clear & Start Next Bill", type="primary", use_container_width=True):
@@ -275,7 +260,7 @@ def render():
                 else:
                     st.markdown("""
                         <div style="background-color: #1e293b; padding: 12px; border-radius: 8px; border: 1px solid #334155; color: #f8fafc;">
-                            ⏳ <b>Waiting for customer Pi payment scan...</b><br>
+                            ⏳ <b>Waiting for verified Pi payment integration...</b><br>
                             <span style="font-size: 12px; color: #94a3b8;">Screen will auto-update once customer completes payment.</span>
                         </div>
                     """, unsafe_allow_html=True)

@@ -8,3 +8,5 @@ pyzbar
 python-dotenv
 opencv-python-headless
 qrcode 
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1

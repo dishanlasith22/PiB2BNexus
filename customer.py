@@ -76,9 +76,7 @@ def render_page():
         if scanned_bill_input:
             st.success(f"Bill verified for Shop Data: {scanned_bill_input}")
             payment_amount = st.number_input("Enter Pi / LKR Payment Amount", min_value=0.0, value=1500.0)
-            if st.button("⚡ Authorize Pi Mainnet Payment", type="primary"):
-                st.balloons()
-                st.success("✅ Payment successfully completed via Pi Network! 1% referral bonus distributed automatically.")
+            st.warning("QR preview only. Do not treat this as a completed Pi payment. Use the verified Pi Wallet payment flow; POS order settlement is not yet connected to this demo payment component.")
 
 
 
