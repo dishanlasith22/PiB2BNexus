@@ -17,6 +17,7 @@ import base64
 
 import requests
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 
@@ -185,6 +186,12 @@ def health():
             PI_API_KEY and PI_PAYMENT_AMOUNT > 0
         )
     }
+
+
+@app.get("/auth/session")
+def get_session(authorization: str | None = Header(default=None)):
+    """Return the verified identity for an existing signed application session."""
+    return {"ok": True, "user": verified_app_user(authorization)}
 
 
 @app.post("/auth/login")
