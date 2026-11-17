@@ -35,7 +35,7 @@ main{flex:1;min-height:0}
 <main>
  <iframe id="workspace" title="PIB2BNexus workspace" src="https://pib2bnexus.onrender.com/?embed=true" allow="clipboard-read; clipboard-write"></iframe>
 </main>
-<script>
+<script nonce="__CSP_NONCE__">
 (()=>{
  const API=location.origin;
  const APP="https://pib2bnexus.onrender.com/";
@@ -59,7 +59,7 @@ main{flex:1;min-height:0}
  }
  async function initPi(){
    if(!window.Pi)throw new Error("Pi SDK not found. Open this registered app inside Pi Browser.");
-   if(!piInit)piInit=window.Pi.init({version:"2.0",sandbox:config.sandbox!==false});
+   if(!piInit)piInit=window.Pi.init({version:"2.0"});
    await piInit;
  }
  async function signIn(){
