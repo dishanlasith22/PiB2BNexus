@@ -43,7 +43,7 @@ main{flex:1;min-height:0}
  const payBtn=document.getElementById("pay");
  const status=document.getElementById("status");
  const frame=document.getElementById("workspace");
- let piInit=null, sessionToken="", config={payments_enabled:false};
+ let piInit=null, sessionToken="", config={payments_enabled:false,sandbox:true};
  const say=(message)=>{status.textContent=message;};
  async function request(path,options={}){
    const response=await fetch(API+path,options);
@@ -59,7 +59,7 @@ main{flex:1;min-height:0}
  }
  async function initPi(){
    if(!window.Pi)throw new Error("Pi SDK not found. Open this registered app inside Pi Browser.");
-   if(!piInit)piInit=window.Pi.init({version:"2.0"});
+   if(!piInit)piInit=window.Pi.init({version:"2.0",sandbox:config.sandbox!==false});
    await piInit;
  }
  async function signIn(){
@@ -138,7 +138,7 @@ main{flex:1;min-height:0}
      payBtn.disabled=!sessionToken;
      payBtn.textContent="Test payment · "+data.payment_amount+" Pi";
    }
-   if(data.sandbox!==true)document.getElementById("hint").textContent="Warning: backend is not in Sandbox mode.";
+   document.getElementById("hint").textContent=data.sandbox===true?"Secure Pi Network sign-in · Sandbox/Testnet environment":"Secure Pi Network sign-in · Production environment";
  }).catch(error=>say("Could not load app configuration: "+error.message));
  const saved=sessionStorage.getItem("pib2bnexus_session");
  if(saved){
