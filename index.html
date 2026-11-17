@@ -1,29 +1,70 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PIB2B Nexus</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: 0;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PIB2B Nexus</title>
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
+<style>
+html,body{margin:0;width:100%;height:100%;font-family:Arial,sans-serif;background:#fff}
+#loginbar{position:relative;z-index:10;min-height:72px;display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 18px;box-sizing:border-box;background:#fff;border-bottom:1px solid #ddd}
+#login{border:0;border-radius:8px;padding:13px 24px;background:#7027a0;color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+#login:disabled{opacity:.6}
+#status{font-size:14px;color:#333}
+#app{width:100%;height:calc(100% - 72px);border:0;display:block}
+@media(max-width:600px){#loginbar{align-items:stretch;flex-direction:column;gap:7px}#status{text-align:center}#app{height:calc(100% - 100px)}}
+</style>
 </head>
 <body>
-  <iframe
-    src="https://pib2bnexus.streamlit.app/?embed=true"
-    allow="clipboard-read; clipboard-write">
-  </iframe>
+<div id="loginbar">
+<button id="login" type="button">Sign in with Pi</button>
+<span id="status">Open in Pi Browser and sign in to continue.</span>
+</div>
+<iframe id="app" src="https://pib2bnexus.onrender.com/?embed=true" allow="clipboard-read; clipboard-write"></iframe>
+<script>
+(()=>{
+ const button=document.getElementById("login");
+ const status=document.getElementById("status");
+ const backend="https://pib2bnexus-pi-backend.onrender.com";
+ let piReady=null,busy=false;
+ const setStatus=(s)=>status.textContent=s;
+ async function initPi(){
+   if(!window.Pi) throw new Error("Pi SDK did not load. Open the app inside Pi Browser.");
+   if(!piReady) piReady=window.Pi.init({version:"2.0",sandbox:true});
+   await piReady;
+ }
+ button.addEventListener("click",async()=>{
+   if(busy)return;
+   busy=true;button.disabled=true;setStatus("Connecting to Pi Network...");
+   try{
+     await initPi();
+     setStatus("Waiting for Pi account approval...");
+     const auth=await window.Pi.authenticate(["username"],payment=>{
+       console.warn("Incomplete Pi payment callback",payment);
+     });
+     if(!auth||!auth.accessToken)throw new Error("Pi did not return an access token.");
+     setStatus("Verifying Pioneer account...");
+     const response=await fetch(backend+"/auth/login",{
+       method:"POST",
+       headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({accessToken:auth.accessToken})
+     });
+     const data=await response.json().catch(()=>({}));
+     if(!response.ok)throw new Error(data.detail||"Backend verification failed.");
+     if(!data.app_session_token||!data.user||!data.user.uid)throw new Error("Verified session response is incomplete.");
+     // Handoff the signed app session to Streamlit via URL fragment, never as a query string.
+     const appUrl=new URL("https://pib2bnexus.com/");
+     appUrl.hash="pi_session="+encodeURIComponent(data.app_session_token);
+     document.getElementById("app").src=appUrl.toString();
+     setStatus("Signed in as @"+data.user.username+". Loading your workspace...");
+   }catch(e){
+     piReady=null;
+     setStatus("Sign-in failed: "+(e&&e.message?e.message:String(e)));
+     button.disabled=false;
+   }finally{busy=false;}
+ });
+ // Do not initialize Pi SDK automatically: the Pi bridge should be invoked by the user's click.
+})();
+</script>
 </body>
 </html>

@@ -17,6 +17,9 @@ import base64
 
 import requests
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 from pydantic import BaseModel, Field
 
 
@@ -39,6 +42,18 @@ SESSION_TTL_SECONDS = int(
 app = FastAPI(
     title="PIB2BNexus Pi Integration",
     version="2.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://pib2bnexus.onrender.com",
+        "https://pib2bnexus.com",
+        "https://www.pib2bnexus.com",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -175,6 +190,26 @@ class PaymentBody(BaseModel):
     )
 
 
+@app.get("/", response_class=HTMLResponse)
+def pi_login_page():
+    """Serve the top-level Pi Browser page so the SDK is not trapped in a Streamlit iframe."""
+    page = Path(__file__).with_name("pi_login.html")
+    if not page.is_file():
+        raise HTTPException(503, "Pi login page is not installed.")
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@app.get("/public-config")
+def public_config():
+    """Only non-secret payment settings are exposed to the Pi login page."""
+    return {
+        "payments_enabled": bool(PI_API_KEY and PI_PAYMENT_AMOUNT > 0),
+        "payment_amount": PI_PAYMENT_AMOUNT,
+        "payment_memo": PI_PAYMENT_MEMO,
+        "sandbox": PI_SANDBOX,
+    }
+
+
 @app.get("/health")
 def health():
     return {
@@ -185,6 +220,12 @@ def health():
             PI_API_KEY and PI_PAYMENT_AMOUNT > 0
         )
     }
+
+
+@app.get("/auth/session")
+def get_session(authorization: str | None = Header(default=None)):
+    """Return the verified identity for an existing signed application session."""
+    return {"ok": True, "user": verified_app_user(authorization)}
 
 
 @app.post("/auth/login")

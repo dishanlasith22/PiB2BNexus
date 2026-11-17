@@ -19,26 +19,23 @@ st.sidebar.title("PiPOS Ecosystem")
 st.sidebar.markdown("---")
 
 backend_url = os.getenv("PI_BACKEND_URL", "").rstrip("/")
+
 payment_amount = float(os.getenv("PI_PAYMENT_AMOUNT", "0"))
 payment_memo = os.getenv("PI_PAYMENT_MEMO", "PIB2BNexus demo payment")
 payment_enabled = bool(backend_url and payment_amount > 0)
 
 if not st.session_state.pi_authenticated:
     st.sidebar.warning("🔒 Sign in with Pi Network")
-    if not backend_url:
-        st.sidebar.error("PI_BACKEND_URL is missing from Render Environment Variables.")
-    result = render_pi_component(
-        backend_url=backend_url,
-        payment_enabled=False,
-    )
+    login_url = os.getenv("PI_LOGIN_URL", "https://pib2bnexus-pi-backend.onrender.com")
+    st.sidebar.link_button("Sign in with Pi", login_url, use_container_width=True)
+    result = render_pi_component(backend_url=backend_url, payment_enabled=False)
     if isinstance(result, dict) and result.get("verified") and result.get("app_session_token"):
-        # This is our own signed app session, created only after App Studio validates the Pi access token.
         st.session_state.pi_authenticated = True
         st.session_state.pi_app_session_token = result["app_session_token"]
         st.session_state.pi_uid = result["uid"]
         st.session_state.username = result["username"]
-        st.success(f"Welcome, {st.session_state.username}!")
         st.rerun()
+
 else:
     st.sidebar.success(f"🟢 Verified Pioneer: {st.session_state.username}")
     role_choice = st.sidebar.selectbox("Switch Role", ["Customer", "Shop Owner", "Dealer"])
@@ -58,19 +55,7 @@ if not st.session_state.pi_authenticated:
     st.markdown("### A paperless business ecosystem powered by Pi Network.")
     st.info("Open PIB2BNexus in Pi Browser and use the Sign in with Pi button.")
 else:
-    # Optional Pi payment test panel. Amount and memo are server-configured.
-    with st.expander("π Pi Wallet – configured payment test"):
-        if not payment_enabled:
-            st.warning("Pi payments are disabled until PI_PAYMENT_AMOUNT is configured on Render.")
-        pay_result = render_pi_component(
-            backend_url=backend_url,
-            app_session_token=st.session_state.pi_app_session_token,
-            payment_enabled=payment_enabled,
-            payment_amount=payment_amount,
-            payment_memo=payment_memo,
-        )
-        if isinstance(pay_result, dict) and pay_result.get("payment_verified"):
-            st.success("Pi Platform confirmed the payment completion.")
+    st.info("Pi test payments are available from the secure Pi login page above the workspace.")
 
     role = st.session_state.user_role
     if role == "Customer":

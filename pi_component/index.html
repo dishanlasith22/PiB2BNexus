@@ -1,330 +1,47 @@
-
 <!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:Arial,sans-serif;margin:0;padding:8px;color:var(--text-color,#222)}
-.wrap{display:flex;flex-direction:column;gap:10px}
-button{border:0;border-radius:8px;padding:12px 14px;background:#7027a0;color:#fff;font-weight:700;cursor:pointer}
-button:disabled{opacity:.55;cursor:not-allowed}
-.status{font-size:13px;min-height:18px}
-.small{font-size:11px;opacity:.75}
-.debug{border:1px solid #aaa;border-radius:8px;padding:10px;font-size:12px}
-.step{padding:5px 0;border-bottom:1px solid #ddd}
-.ok{color:#16803c}.wait{color:#a66b00}.fail{color:#c22}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <button id="login">Sign in with Pi</button>
-  <div id="status" class="status">Ready to test.</div>
-  <div class="debug">
-    <b>Pi Login Debug Steps</b>
-    <div id="steps"></div>
-  </div>
-  <button id="pay" disabled>Pay with Pi</button>
-  <div class="small" id="payhint"></div>
-</div>
-
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font:13px Arial,sans-serif;margin:0;padding:4px;color:#333}.ok{color:#16803c}.fail{color:#b42318}</style></head>
+<body><span id="status">Waiting for secure Pi sign-in...</span>
 <script>
 (function(){
-  const login=document.getElementById("login");
-  const pay=document.getElementById("pay");
-  const status=document.getElementById("status");
-  const steps=document.getElementById("steps");
-  const payhint=document.getElementById("payhint");
-
-  let args={};
-  let currentValue=null;
-  let piInitPromise=null;
-  let piSdkWindow=null;
-  let started=false;
-
-  const names=[
-    "Streamlit component ready",
-    "Pi SDK script loaded",
-    "Pi SDK initialized",
-    "Pi authentication started",
-    "Pi access token received",
-    "Backend login completed",
-    "App Studio identity verified"
-  ];
-
-  const states=names.map(()=>({state:"pending",time:""}));
-
-  function renderSteps(){
-    steps.innerHTML="";
-    names.forEach((name,i)=>{
-      const item=document.createElement("div");
-      item.className="step";
-      const s=states[i];
-      item.innerHTML="<b>"+(i+1)+". "+name+"</b> — "+
-        "<span class='"+s.state+"'>"+s.state.toUpperCase()+"</span>"+
-        (s.time?" ("+s.time+")":"");
-      steps.appendChild(item);
-    });
-  }
-
-  function mark(i,state){
-    states[i].state=state;
-    states[i].time=new Date().toLocaleTimeString();
-    renderSteps();
-  }
-
-  function send(type,extra={}){
-    window.parent.postMessage(
-      {isStreamlitMessage:true,type,...extra},"*"
-    );
-  }
-
-  function setValue(value){
-    currentValue=value;
-    send("streamlit:setComponentValue",
-      {value,dataType:"json"});
-  }
-
-  function height(){
-    send("streamlit:setFrameHeight",{height:440});
-  }
-
-  send("streamlit:componentReady",{apiVersion:1});
-  mark(0,"ok");
-  height();
-
-  window.addEventListener("message",(event)=>{
-    const msg=event.data||{};
-    if(msg.type==="streamlit:render"){
-      args=msg.args||{};
-      currentValue=msg.value||currentValue;
-      pay.disabled=!(args.app_session_token&&args.payment_enabled);
-      payhint.textContent=args.payment_enabled
-        ?"Configured payment: "+args.payment_amount+" Pi"
-        :"Payments are disabled until configured.";
-      height();
-    }
-  });
-
-  async function ensurePiReady(){
-    mark(1,"wait");
-    mark(2,"wait");
-
-    try {
-      // Streamlit renders this component inside an iframe. The Pi Browser
-      // bridge must be initialized in the top-level app window, not here.
-      const topWindow = window.parent || window;
-      if (topWindow.location.origin !== window.location.origin) {
-        throw new Error("Pi login frame is not same-origin with the app page.");
-      }
-
-      if (!topWindow.Pi) {
-        await new Promise((resolve,reject)=>{
-          let settled=false;
-          const finish=(error)=>{
-            if(settled)return;
-            settled=true;
-            clearTimeout(timer);
-            error?reject(error):resolve();
-          };
-          const timer=setTimeout(
-            ()=>finish(new Error("Pi SDK script load timed out after 20 seconds.")),
-            20000
-          );
-          const existing = topWindow.document.querySelector(
-            'script[data-pib2bnexus-pi-sdk="true"]'
-          );
-          if (existing) {
-            existing.addEventListener("load",()=>finish(),{once:true});
-            existing.addEventListener("error",()=>finish(
-              new Error("Pi SDK script failed to load in the app window.")
-            ),{once:true});
-            if (topWindow.Pi) finish();
-            return;
-          }
-
-          const script=topWindow.document.createElement("script");
-          script.src="https://sdk.minepi.com/pi-sdk.js";
-          script.async=true;
-          script.dataset.pib2bnexusPiSdk="true";
-          script.onload=()=>finish();
-          script.onerror=()=>finish(
-            new Error("Pi SDK script failed to load in the app window.")
-          );
-          topWindow.document.head.appendChild(script);
-        });
-      }
-
-      if (!topWindow.Pi) {
-        throw new Error("Pi SDK loaded but window.Pi is unavailable.");
-      }
-
-      piSdkWindow=topWindow;
-      mark(1,"ok");
-
-      if(!piInitPromise){
-        piInitPromise = topWindow.Pi.init({
-          version: "2.0",
-          sandbox: true
-        });
-      }
-
-      await piInitPromise;
-      mark(2,"ok");
-
-    } catch(error) {
-      piInitPromise = null;
-      mark(2,"fail");
-
-      throw new Error(
-        "Pi SDK initialization failed: " +
-        (error && error.message ? error.message : String(error))
-      );
-    }
-  }
-
-  async function backendPost(path,token,body){
-    const headers={"Content-Type":"application/json"};
-    if(token)headers["Authorization"]="Bearer "+token;
-
-    const response=await fetch(
-      (args.backend_url||"").replace(/\/$/,"")+path,
-      {method:"POST",headers,body:JSON.stringify(body||{})}
-    );
-
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok){
-      throw new Error(result.detail||"Backend request failed: "+response.status);
-    }
-    return result;
-  }
-
-  login.addEventListener("click",async()=>{
-    if(started)return;
-    started=true;
-    login.disabled=true;
-    states.forEach(s=>{s.state="pending";s.time="";});
-    renderSteps();
-    status.textContent="Starting Pi login...";
-
-    try{
-      if(!args.backend_url)
-        throw new Error("Backend URL is missing.");
-
-      await ensurePiReady();
-
-      mark(3,"wait");
-      status.textContent="Waiting for Pi authentication...";
-
-      const auth=await Promise.race([
-        piSdkWindow.Pi.authenticate(["username"],function(payment){
-          console.warn("Incomplete payment:",payment);
-        }),
-        new Promise((_,reject)=>setTimeout(
-          ()=>reject(new Error("Pi authentication timed out after 120 seconds.")),
-          120000
-        ))
-      ]);
-
-      mark(3,"ok");
-
-      if(!auth||!auth.accessToken)
-        throw new Error("Pi access token was not received.");
-
-      mark(4,"ok");
-      status.textContent="Sending token to backend...";
-
-      const verified=await backendPost(
-        "/auth/login",null,{accessToken:auth.accessToken}
-      );
-
-      mark(5,"ok");
-
-      if(!verified.app_session_token||
-         !verified.user||
-         !verified.user.uid||
-         !verified.user.username){
-        throw new Error("Verified identity is incomplete.");
-      }
-
-      mark(6,"ok");
-
-      setValue({
-        app_session_token:verified.app_session_token,
-        uid:verified.user.uid,
-        username:verified.user.username,
-        verified:true
-      });
-
-      status.textContent="Verified Pioneer: @"+verified.user.username;
-      pay.disabled=!args.payment_enabled;
-
-    }catch(e){
-      const failed=states.findIndex(s=>s.state==="wait");
-      if(failed>=0)mark(failed,"fail");
-      status.textContent="ERROR: "+(e.message||String(e));
-    }finally{
-      started=false;
-      login.disabled=false;
-    }
-  });
-
-  pay.addEventListener("click",async()=>{
-    const token=(currentValue&&currentValue.app_session_token)||
-      args.app_session_token;
-
-    if(!token||!args.payment_enabled)return;
-
-    pay.disabled=true;
-    status.textContent="Starting Pi payment...";
-
-    try{
-      await ensurePiReady();
-
-      piSdkWindow.Pi.createPayment({
-        amount:Number(args.payment_amount),
-        memo:args.payment_memo||"PIB2BNexus test purchase",
-        metadata:{app:"PIB2BNexus"}
-      },{
-        onReadyForServerApproval:async(paymentId)=>{
-          try{
-            await backendPost("/payments/approve",token,{paymentId});
-            status.textContent="Payment approved.";
-          }catch(e){
-            status.textContent="Approval failed: "+e.message;
-            pay.disabled=false;
-          }
-        },
-        onReadyForServerCompletion:async(paymentId,txid)=>{
-          try{
-            const result=await backendPost(
-              "/payments/complete",token,{paymentId,txid}
-            );
-            if(result.ok)status.textContent="Payment verified.";
-            else throw new Error("Payment not verified.");
-          }catch(e){
-            status.textContent="Completion failed: "+e.message;
-          }finally{
-            pay.disabled=false;
-          }
-        },
-        onCancel:()=>{
-          status.textContent="Payment cancelled.";
-          pay.disabled=false;
-        },
-        onError:(e)=>{
-          status.textContent="Payment error: "+(e.message||String(e));
-          pay.disabled=false;
-        }
-      });
-    }catch(e){
-      status.textContent="Payment error: "+e.message;
-      pay.disabled=false;
-    }
-  });
-
-  renderSteps();
+ const status=document.getElementById("status");
+ let args={},sent=false;
+ function send(type,extra={}){window.parent.postMessage({isStreamlitMessage:true,type,...extra},"*");}
+ function setValue(value){send("streamlit:setComponentValue",{value,dataType:"json"});}
+ send("streamlit:componentReady",{apiVersion:1});
+ send("streamlit:setFrameHeight",{height:28});
+ async function receive(){
+   if(sent)return;
+   let token="";
+   try{
+     const match=window.parent.location.hash.match(/(?:^#|&)pi_session=([^&]+)/);
+     if(!match)return;
+     token=decodeURIComponent(match[1]);
+     if(!token)return;
+     sent=true;
+     window.parent.history.replaceState(null,"",window.parent.location.pathname+window.parent.location.search);
+     status.textContent="Verifying Pi session...";
+     const response=await fetch((args.backend_url||"").replace(/\/$/,"")+"/auth/session",{
+       headers:{"Authorization":"Bearer "+token}
+     });
+     const result=await response.json().catch(()=>({}));
+     if(!response.ok||!result.user||!result.user.uid||!result.user.username)
+       throw new Error(result.detail||"Session verification failed.");
+     setValue({verified:true,app_session_token:token,uid:result.user.uid,username:result.user.username});
+     status.innerHTML='<span class="ok">Pi account verified.</span>';
+   }catch(error){
+     sent=false;
+     status.innerHTML='<span class="fail">Pi session error: '+String(error.message||error)+'</span>';
+   }
+ }
+ window.addEventListener("message",event=>{
+   if(event.data&&event.data.type==="streamlit:render"){
+     args=event.data.args||{};
+     receive();
+   }
+ });
+ // Streamlit may deliver the first render immediately after componentReady.
+ setTimeout(receive,100);
 })();
-</script>
-</body>
-</html>
+</script></body></html>
