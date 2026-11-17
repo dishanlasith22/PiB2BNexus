@@ -1,9 +1,9 @@
 
 """PIB2BNexus FastAPI backend.
 
-Authentication is verified directly with the official Pi Platform API GET /v2/me endpoint.
-The browser's uid/username are never trusted.
-A short-lived HMAC app session is issued only after Pi confirms the access token.
+Pi SDK access tokens are exchanged server-side with Pi App Studio. Only the
+identity returned by App Studio is trusted; browser-supplied identity is ignored.
+A short-lived HMAC app session is issued after App Studio validates the token.
 Pi Server API key is used only for server-side Pi payment operations.
 """
 
@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 
 PI_API_BASE = "https://api.minepi.com/v2"
+PI_APP_STUDIO_LOGIN_URL = "https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login"
 
 PI_API_KEY = os.getenv("PI_API_KEY", "").strip()
 PI_SANDBOX = os.getenv("PI_SANDBOX", "true").lower() == "true"
@@ -195,7 +196,20 @@ def pi_login_page():
     page = Path(__file__).with_name("pi_login.html")
     if not page.is_file():
         raise HTTPException(503, "Pi login page is not installed.")
-    return HTMLResponse(page.read_text(encoding="utf-8"))
+    nonce = base64.b64encode(os.urandom(18)).decode("ascii")
+    html = page.read_text(encoding="utf-8").replace("__CSP_NONCE__", nonce)
+    response = HTMLResponse(html)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' https://sdk.minepi.com 'nonce-" + nonce + "'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' https://socialchain.app; "
+        "frame-src 'self' https://pib2bnexus.onrender.com; "
+        "frame-ancestors 'self' https://*.pinet.com https://*.minepi.com; "
+        "base-uri 'self'; object-src 'none'"
+    )
+    response.headers.pop("X-Frame-Options", None)
+    return response
 
 
 @app.get("/public-config")
@@ -229,17 +243,18 @@ def get_session(authorization: str | None = Header(default=None)):
 
 @app.post("/auth/login")
 def login(body: AuthBody):
-    """Verify the SDK access token directly with Pi Platform API /me."""
+    """Exchange the Pi SDK access token with Pi App Studio and trust only its identity."""
     try:
-        response = requests.get(
-            f"{PI_API_BASE}/me",
-            headers={"Authorization": f"Bearer {body.accessToken}"},
+        response = requests.post(
+            PI_APP_STUDIO_LOGIN_URL,
+            headers={"Content-Type": "application/json"},
+            json={"accessToken": body.accessToken},
             timeout=20
         )
     except requests.RequestException:
         raise HTTPException(
             502,
-            "Could not connect to Pi Platform API to verify your Pioneer account."
+            "Could not connect to Pi App Studio to verify your Pioneer account."
         )
 
     if response.status_code == 401:
@@ -247,18 +262,20 @@ def login(body: AuthBody):
     if response.status_code != 200:
         raise HTTPException(
             502,
-            "Pi Platform API could not verify this sign-in. Please try again."
+            "Pi App Studio could not verify this sign-in. Please try again."
         )
 
     try:
-        user = response.json()
+        verified = response.json()
+        session_token = verified.get("sessionToken")
+        user = verified.get("user") or {}
         uid = user.get("uid")
         username = user.get("username")
     except (ValueError, AttributeError):
-        raise HTTPException(502, "Pi Platform API returned an invalid identity response.")
+        raise HTTPException(502, "Pi App Studio returned an invalid identity response.")
 
-    if not uid or not username:
-        raise HTTPException(401, "Pi did not return a verified Pioneer identity.")
+    if not session_token or not uid or not username:
+        raise HTTPException(401, "Pi App Studio did not return a verified Pioneer identity.")
 
     own_session = issue_app_session(str(uid), str(username))
     return {
@@ -266,7 +283,6 @@ def login(body: AuthBody):
         "app_session_token": own_session,
         "user": {"uid": str(uid), "username": str(username)}
     }
-
 
 def verify_payment_belongs_to_user(
     payment_id: str,
