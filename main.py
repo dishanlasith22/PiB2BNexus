@@ -53,9 +53,9 @@ else:
 if not st.session_state.pi_authenticated:
     st.title("🌍 Welcome to PiPOS – B2B2C Platform")
     st.markdown("### A paperless business ecosystem powered by Pi Network.")
-    st.info("Open PIB2BNexus in Pi Browser and use the Sign in with Pi button.")
+    st.info("Use the Sign in with Pi button above. Your account will be verified by Pi App Studio.")
 else:
-    st.info("Pi test payments are available from the secure Pi login page above the workspace.")
+    st.info("Pi Network account verified. Your workspace is ready.")
 
     role = st.session_state.user_role
     if role == "Customer":
