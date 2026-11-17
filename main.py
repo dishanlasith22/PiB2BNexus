@@ -26,6 +26,8 @@ payment_enabled = bool(backend_url and payment_amount > 0)
 
 if not st.session_state.pi_authenticated:
     st.sidebar.warning("🔒 Sign in with Pi Network")
+    login_url = os.getenv("PI_LOGIN_URL", "https://pib2bnexus-pi-backend.onrender.com")
+    st.sidebar.link_button("Sign in with Pi", login_url, use_container_width=True)
     result = render_pi_component(backend_url=backend_url, payment_enabled=False)
     if isinstance(result, dict) and result.get("verified") and result.get("app_session_token"):
         st.session_state.pi_authenticated = True
