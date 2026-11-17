@@ -1,47 +1,69 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font:13px Arial,sans-serif;margin:0;padding:4px;color:#333}.ok{color:#16803c}.fail{color:#b42318}</style></head>
-<body><span id="status">Waiting for secure Pi sign-in...</span>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
+<style>
+body{font:14px Arial,sans-serif;margin:0;padding:8px;color:#302638}
+button{border:0;border-radius:8px;padding:12px 18px;background:#7027a0;color:#fff;font-weight:700;cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}
+#status{margin-left:10px;color:#554b5d}
+</style>
+</head>
+<body>
+<button id="login" type="button">Sign in with Pi</button>
+<span id="status">Sign in here to verify this app in Pi App Studio.</span>
 <script>
 (function(){
+ const button=document.getElementById("login");
  const status=document.getElementById("status");
- let args={},sent=false;
- function send(type,extra={}){window.parent.postMessage({isStreamlitMessage:true,type,...extra},"*");}
- function setValue(value){send("streamlit:setComponentValue",{value,dataType:"json"});}
- send("streamlit:componentReady",{apiVersion:1});
- send("streamlit:setFrameHeight",{height:28});
- async function receive(){
-   if(sent)return;
-   let token="";
+ let args={},piInit=null,busy=false;
+ function setStatus(text){status.textContent=text;}
+ function sendValue(value){
+   window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setComponentValue",value,dataType:"json"},"*");
+ }
+ window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:componentReady",apiVersion:1},"*");
+ window.parent.postMessage({isStreamlitMessage:true,type:"streamlit:setFrameHeight",height:64},"*");
+ window.addEventListener("message",event=>{
+   if(event.data&&event.data.type==="streamlit:render") args=event.data.args||{};
+ });
+ async function initPi(){
+   if(!window.Pi)throw new Error("Pi SDK did not load. Open this app in Pi Desktop or Pi Browser.");
+   if(!piInit)piInit=window.Pi.init({version:"2.0"});
+   await piInit;
+ }
+ async function signIn(){
+   if(busy)return;
+   busy=true;button.disabled=true;setStatus("Connecting to Pi...");
    try{
-     const match=window.parent.location.hash.match(/(?:^#|&)pi_session=([^&]+)/);
-     if(!match)return;
-     token=decodeURIComponent(match[1]);
-     if(!token)return;
-     sent=true;
-     window.parent.history.replaceState(null,"",window.parent.location.pathname+window.parent.location.search);
-     status.textContent="Verifying Pi session...";
-     const response=await fetch((args.backend_url||"").replace(/\/$/,"")+"/auth/session",{
-       headers:{"Authorization":"Bearer "+token}
+     await initPi();
+     setStatus("Approve the Pi sign-in request...");
+     const auth=await window.Pi.authenticate(["username"],payment=>{
+       console.warn("Incomplete payment found",payment);
+     });
+     if(!auth||!auth.accessToken)throw new Error("Pi did not provide an access token.");
+     setStatus("Verifying account with Pi App Studio...");
+     const base=(args.backend_url||"").replace(/\/$/,"");
+     const response=await fetch(base+"/auth/login",{
+       method:"POST",
+       headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({accessToken:auth.accessToken})
      });
      const result=await response.json().catch(()=>({}));
-     if(!response.ok||!result.user||!result.user.uid||!result.user.username)
-       throw new Error(result.detail||"Session verification failed.");
-     setValue({verified:true,app_session_token:token,uid:result.user.uid,username:result.user.username});
-     status.innerHTML='<span class="ok">Pi account verified.</span>';
+     if(!response.ok)throw new Error(result.detail||"App Studio verification failed ("+response.status+").");
+     if(!result.app_session_token||!result.user||!result.user.uid||!result.user.username)
+       throw new Error("Backend did not return a verified App Studio session.");
+     setStatus("Verified as @"+result.user.username);
+     sendValue({verified:true,app_session_token:result.app_session_token,uid:result.user.uid,username:result.user.username});
    }catch(error){
-     sent=false;
-     status.innerHTML='<span class="fail">Pi session error: '+String(error.message||error)+'</span>';
+     piInit=null;
+     setStatus("Sign-in failed: "+(error.message||String(error)));
+     button.disabled=false;busy=false;
    }
  }
- window.addEventListener("message",event=>{
-   if(event.data&&event.data.type==="streamlit:render"){
-     args=event.data.args||{};
-     receive();
-   }
- });
- // Streamlit may deliver the first render immediately after componentReady.
- setTimeout(receive,100);
+ button.addEventListener("click",signIn);
 })();
-</script></body></html>
+</script>
+</body>
+</html>
