@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 from pi_integration import render_pi_component
 
 st.set_page_config(page_title="PiPOS B2B2C Platform", page_icon="🛍️", layout="wide")
@@ -19,26 +20,40 @@ st.sidebar.title("PiPOS Ecosystem")
 st.sidebar.markdown("---")
 
 backend_url = os.getenv("PI_BACKEND_URL", "").rstrip("/")
+
+# Receive the short-lived, signed app session handed off by the top-level
+# Pi SDK page. The token is issued only after the FastAPI backend verifies
+# the Pi access token against the Platform API.
+query_token = st.query_params.get("pi_session")
+if query_token:
+    try:
+        import requests
+        verify_response = requests.get(
+            backend_url + "/auth/session",
+            headers={"Authorization": "Bearer " + str(query_token)},
+            timeout=10,
+        )
+        if verify_response.ok:
+            verified_user = verify_response.json().get("user") or {}
+            if verified_user.get("uid") and verified_user.get("username"):
+                st.session_state.pi_authenticated = True
+                st.session_state.pi_app_session_token = str(query_token)
+                st.session_state.pi_uid = str(verified_user["uid"])
+                st.session_state.username = str(verified_user["username"])
+                st.query_params.clear()
+                st.rerun()
+    except requests.RequestException:
+        st.error("Could not verify Pi login session. Please retry.")
+
 payment_amount = float(os.getenv("PI_PAYMENT_AMOUNT", "0"))
 payment_memo = os.getenv("PI_PAYMENT_MEMO", "PIB2BNexus demo payment")
 payment_enabled = bool(backend_url and payment_amount > 0)
 
 if not st.session_state.pi_authenticated:
     st.sidebar.warning("🔒 Sign in with Pi Network")
-    if not backend_url:
-        st.sidebar.error("PI_BACKEND_URL is missing from Render Environment Variables.")
-    result = render_pi_component(
-        backend_url=backend_url,
-        payment_enabled=False,
-    )
-    if isinstance(result, dict) and result.get("verified") and result.get("app_session_token"):
-        # This is our own signed app session, created only after App Studio validates the Pi access token.
-        st.session_state.pi_authenticated = True
-        st.session_state.pi_app_session_token = result["app_session_token"]
-        st.session_state.pi_uid = result["uid"]
-        st.session_state.username = result["username"]
-        st.success(f"Welcome, {st.session_state.username}!")
-        st.rerun()
+    login_url = os.getenv("PI_LOGIN_URL", "https://pib2bnexus.com")
+    st.sidebar.link_button("Sign in with Pi", login_url, use_container_width=True)
+
 else:
     st.sidebar.success(f"🟢 Verified Pioneer: {st.session_state.username}")
     role_choice = st.sidebar.selectbox("Switch Role", ["Customer", "Shop Owner", "Dealer"])
