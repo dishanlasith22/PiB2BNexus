@@ -90,22 +90,27 @@ def login(body: AuthBody):
     if response.status_code != 200:
         raise HTTPException(401, "Pi App Studio could not verify this Pi sign-in.")
     try:
-        result = response.json()
-        appstudio_session = result.get("sessionToken")
-        user = result.get("user") or {}
-        uid, username = user.get("uid"), user.get("username")
-    except (ValueError, AttributeError):
-        raise HTTPException(502, "Pi App Studio returned an invalid authentication response.")
-    if not appstudio_session or not uid or not username:
-        raise HTTPException(401, "Pi App Studio did not return a verified Pioneer identity.")
-    own_session = issue_app_session(str(uid), str(username))
-   return {
+       
+    result = response.json()
+    appstudio_session = result.get("sessionToken")
+    user = result.get("user") or {}
+    uid, username = user.get("uid"), user.get("username")
+except (ValueError, AttributeError):
+    raise HTTPException(502, "Pi App Studio returned an invalid authentication response.")
+
+if not appstudio_session or not uid or not username:
+    raise HTTPException(401, "Pi App Studio did not return a verified Pioneer identity.")
+
+own_session = issue_app_session(str(uid), str(username))
+return {
     "ok": True,
-    "verified": True,
     "app_session_token": own_session,
-    "uid": str(uid),
-    "username": str(username)
+    "user": {
+        "uid": str(uid),
+        "username": str(username)
+    }
 }
+
 
 def verify_payment_belongs_to_user(payment_id: str, uid: str):
     response = pi_api("GET", f"/payments/{payment_id}")
