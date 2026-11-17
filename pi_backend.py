@@ -1,11 +1,10 @@
 
 """PIB2BNexus FastAPI backend.
 
-Authentication is verified by Pi App Studio's login exchange.
+Authentication is verified directly with the official Pi Platform API GET /v2/me endpoint.
 The browser's uid/username are never trusted.
-A short-lived HMAC app session is issued after App Studio
-returns its verified identity.
-Pi Server API key is used only for Pi payments.
+A short-lived HMAC app session is issued only after Pi confirms the access token.
+Pi Server API key is used only for server-side Pi payment operations.
 """
 
 import os
@@ -215,7 +214,7 @@ def health():
     return {
         "ok": True,
         "sandbox": PI_SANDBOX,
-        "auth_provider": "Pi App Studio",
+        "auth_provider": "Pi Platform API",
         "payments_configured": bool(
             PI_API_KEY and PI_PAYMENT_AMOUNT > 0
         )
@@ -230,56 +229,44 @@ def get_session(authorization: str | None = Header(default=None)):
 
 @app.post("/auth/login")
 def login(body: AuthBody):
-    """Exchange the Pi SDK access token with Pi App Studio, then issue our own session."""
+    """Verify the SDK access token directly with Pi Platform API /me."""
     try:
-        response = requests.post(
-            "https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login",
-            headers={"Content-Type": "application/json"},
-            json={"accessToken": body.accessToken},
+        response = requests.get(
+            f"{PI_API_BASE}/me",
+            headers={"Authorization": f"Bearer {body.accessToken}"},
             timeout=20
         )
     except requests.RequestException:
         raise HTTPException(
             502,
-            "Could not connect to Pi App Studio identity verification."
+            "Could not connect to Pi Platform API to verify your Pioneer account."
         )
 
     if response.status_code == 401:
-        raise HTTPException(401, "Pi access token is invalid or expired.")
+        raise HTTPException(401, "Pi access token is invalid or expired. Please sign in again.")
     if response.status_code != 200:
         raise HTTPException(
             502,
-            "Pi App Studio could not verify this sign-in."
+            "Pi Platform API could not verify this sign-in. Please try again."
         )
 
     try:
-        result = response.json()
-        session_token = result.get("sessionToken")
-        user = result.get("user") or {}
+        user = response.json()
         uid = user.get("uid")
         username = user.get("username")
     except (ValueError, AttributeError):
-        raise HTTPException(
-            502,
-            "Pi App Studio returned an invalid identity response."
-        )
+        raise HTTPException(502, "Pi Platform API returned an invalid identity response.")
 
-    if not session_token or not uid or not username:
-        raise HTTPException(
-            401,
-            "Pi App Studio did not return a verified Pioneer identity."
-        )
+    if not uid or not username:
+        raise HTTPException(401, "Pi did not return a verified Pioneer identity.")
 
-    # Only identity returned by App Studio is trusted; browser uid/username are ignored.
     own_session = issue_app_session(str(uid), str(username))
     return {
         "ok": True,
         "app_session_token": own_session,
-        "user": {
-            "uid": str(uid),
-            "username": str(username)
-        }
+        "user": {"uid": str(uid), "username": str(username)}
     }
+
 
 def verify_payment_belongs_to_user(
     payment_id: str,
