@@ -24,26 +24,23 @@ backend_url = os.getenv("PI_BACKEND_URL", "").rstrip("/")
 # Receive the short-lived, signed app session handed off by the top-level
 # Pi SDK page. The token is issued only after the FastAPI backend verifies
 # the Pi access token against the Platform API.
-query_token = st.query_params.get("pi_session")
-if query_token:
-    try:
-        import requests
-        verify_response = requests.get(
-            backend_url + "/auth/session",
-            headers={"Authorization": "Bearer " + str(query_token)},
-            timeout=10,
-        )
-        if verify_response.ok:
-            verified_user = verify_response.json().get("user") or {}
-            if verified_user.get("uid") and verified_user.get("username"):
-                st.session_state.pi_authenticated = True
-                st.session_state.pi_app_session_token = str(query_token)
-                st.session_state.pi_uid = str(verified_user["uid"])
-                st.session_state.username = str(verified_user["username"])
-                st.query_params.clear()
-                st.rerun()
-    except requests.RequestException:
-        st.error("Could not verify Pi login session. Please retry.")
+# Read the one-time login handoff from the URL fragment via a small
+# Streamlit component. Fragments are not sent to the web server in HTTP requests.
+_fragment_reader = components.html(
+    """
+    <script>
+    (function(){
+      const match = window.parent.location.hash.match(/(?:^#|&)pi_session=([^&]+)/);
+      if (match) {
+        const token = decodeURIComponent(match[1]);
+        window.parent.history.replaceState(null, "", window.parent.location.pathname);
+        window.parent.postMessage({type:"PIB2B_PI_SESSION", token:token}, window.parent.location.origin);
+      }
+    })();
+    </script>
+    """,
+    height=0,
+)
 
 payment_amount = float(os.getenv("PI_PAYMENT_AMOUNT", "0"))
 payment_memo = os.getenv("PI_PAYMENT_MEMO", "PIB2BNexus demo payment")
