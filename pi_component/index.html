@@ -4,7 +4,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://sdk.minepi.com/pi-sdk.js"></script>
 <style>
 body{font-family:Arial,sans-serif;margin:0;padding:8px;color:var(--text-color,#222)}
 .wrap{display:flex;flex-direction:column;gap:10px}
@@ -40,6 +39,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
   let args={};
   let currentValue=null;
   let piInitPromise=null;
+  let piSdkWindow=null;
   let started=false;
 
   const names=[
@@ -107,16 +107,52 @@ button:disabled{opacity:.55;cursor:not-allowed}
   });
 
   async function ensurePiReady(){
-    if(!window.Pi){
-      throw new Error("Pi SDK script not available.");
-    }
-
-    mark(1,"ok");
+    mark(1,"wait");
     mark(2,"wait");
 
     try {
+      // Streamlit renders this component inside an iframe. The Pi Browser
+      // bridge must be initialized in the top-level app window, not here.
+      const topWindow = window.parent || window;
+      if (topWindow.location.origin !== window.location.origin) {
+        throw new Error("Pi login frame is not same-origin with the app page.");
+      }
+
+      if (!topWindow.Pi) {
+        await new Promise((resolve,reject)=>{
+          const existing = topWindow.document.querySelector(
+            'script[data-pib2bnexus-pi-sdk="true"]'
+          );
+          if (existing) {
+            existing.addEventListener("load",resolve,{once:true});
+            existing.addEventListener("error",()=>reject(
+              new Error("Pi SDK script failed to load in the app window.")
+            ),{once:true});
+            if (topWindow.Pi) resolve();
+            return;
+          }
+
+          const script=topWindow.document.createElement("script");
+          script.src="https://sdk.minepi.com/pi-sdk.js";
+          script.async=true;
+          script.dataset.pib2bnexusPiSdk="true";
+          script.onload=resolve;
+          script.onerror=()=>reject(
+            new Error("Pi SDK script failed to load in the app window.")
+          );
+          topWindow.document.head.appendChild(script);
+        });
+      }
+
+      if (!topWindow.Pi) {
+        throw new Error("Pi SDK loaded but window.Pi is unavailable.");
+      }
+
+      piSdkWindow=topWindow;
+      mark(1,"ok");
+
       if(!piInitPromise){
-        piInitPromise = window.Pi.init({
+        piInitPromise = topWindow.Pi.init({
           version: "2.0",
           sandbox: true
         });
@@ -170,7 +206,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
       status.textContent="Waiting for Pi authentication...";
 
       const auth=await Promise.race([
-        window.Pi.authenticate(["username"],function(payment){
+        piSdkWindow.Pi.authenticate(["username"],function(payment){
           console.warn("Incomplete payment:",payment);
         }),
         new Promise((_,reject)=>setTimeout(
@@ -234,7 +270,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
     try{
       await ensurePiReady();
 
-      window.Pi.createPayment({
+      piSdkWindow.Pi.createPayment({
         amount:Number(args.payment_amount),
         memo:args.payment_memo||"PIB2BNexus test purchase",
         metadata:{app:"PIB2BNexus"}
