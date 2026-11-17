@@ -6,13 +6,14 @@ import pi_backend
 class FakeResponse:
     status_code = 200
     def json(self):
-        return {"sessionToken": "appstudio-session", "user": {"uid": "trusted-uid", "username": "trusted-name"}}
+        return {"uid": "trusted-uid", "username": "trusted-name"}
 
-def test_login_uses_appstudio_identity_and_ignores_browser_identity(monkeypatch):
-    def fake_post(*args, **kwargs):
-        assert kwargs["json"] == {"accessToken": "pi-access-token"}
+def test_login_uses_platform_me_identity_and_ignores_browser_identity(monkeypatch):
+    def fake_get(url, **kwargs):
+        assert url == pi_backend.PI_API_BASE + "/me"
+        assert kwargs["headers"] == {"Authorization": "Bearer pi-access-token"}
         return FakeResponse()
-    monkeypatch.setattr(pi_backend.requests, "post", fake_post)
+    monkeypatch.setattr(pi_backend.requests, "get", fake_get)
     client = TestClient(pi_backend.app)
     response = client.post("/auth/login", json={"accessToken": "pi-access-token", "uid": "attacker-uid", "username": "attacker-name"})
     assert response.status_code == 200

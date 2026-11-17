@@ -20,10 +20,6 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 
-APP_STUDIO_LOGIN = (
-    "https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login"
-)
-
 PI_API_BASE = "https://api.minepi.com/v2"
 
 PI_API_KEY = os.getenv("PI_API_KEY", "").strip()
@@ -193,60 +189,44 @@ def health():
 
 @app.post("/auth/login")
 def login(body: AuthBody):
-
-    # Verify the Pi access token through Pi App Studio.
+    """Verify a Pi SDK access token with the official Platform API /me endpoint."""
     try:
-        response = requests.post(
-            APP_STUDIO_LOGIN,
-            headers={
-                "Content-Type": "application/json"
-            },
-            json={
-                "accessToken": body.accessToken
-            },
+        response = requests.get(
+            PI_API_BASE + "/me",
+            headers={"Authorization": f"Bearer {body.accessToken}"},
             timeout=20
         )
-
     except requests.RequestException:
         raise HTTPException(
             502,
-            "Could not connect to Pi App Studio authentication service."
+            "Could not connect to Pi Platform identity verification."
         )
 
+    if response.status_code == 401:
+        raise HTTPException(401, "Pi access token is invalid or expired.")
     if response.status_code != 200:
         raise HTTPException(
-            401,
-            "Pi App Studio could not verify this Pi sign-in."
+            502,
+            "Pi Platform could not verify this sign-in."
         )
 
-    # Read the verified identity returned by App Studio.
     try:
-        result = response.json()
-
-        appstudio_session = result.get("sessionToken")
-        user = result.get("user") or {}
-
+        user = response.json()
         uid = user.get("uid")
         username = user.get("username")
-
     except (ValueError, AttributeError):
         raise HTTPException(
             502,
-            "Pi App Studio returned an invalid authentication response."
+            "Pi Platform returned an invalid identity response."
         )
 
-    if not appstudio_session or not uid or not username:
+    if not uid or not username:
         raise HTTPException(
             401,
-            "Pi App Studio did not return a verified Pioneer identity."
+            "Pi Platform did not return a verified Pioneer identity."
         )
 
-    # Issue our own signed application session.
-    own_session = issue_app_session(
-        str(uid),
-        str(username)
-    )
-
+    own_session = issue_app_session(str(uid), str(username))
     return {
         "ok": True,
         "app_session_token": own_session,
