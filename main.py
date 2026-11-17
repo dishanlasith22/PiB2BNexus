@@ -21,6 +21,42 @@ st.sidebar.markdown("---")
 
 backend_url = os.getenv("PI_BACKEND_URL", "").rstrip("/")
 
+# Securely receive the one-time Pi app session from the top-level page.
+# The parent and this Streamlit document share the registered app origin.
+st.components.v1.html(
+    """
+    <script>
+    (function () {
+      const parentWindow = window.parent;
+      const handler = async function (event) {
+        if (event.origin !== parentWindow.location.origin ||
+            event.source !== parentWindow ||
+            !event.data || event.data.type !== "PIB2B_PI_SESSION") return;
+        const token = event.data.token;
+        if (!token || typeof token !== "string") return;
+        try {
+          const response = await fetch(
+            "" + "https://pib2bnexus-pi-backend.onrender.com/auth/session",
+            {headers: {"Authorization": "Bearer " + token}}
+          );
+          const result = await response.json();
+          if (!response.ok || !result.user) throw new Error("Session verification failed.");
+          parentWindow.postMessage(
+            {type:"PIB2B_PI_SESSION_ACCEPTED", token:token, user:result.user},
+            event.origin
+          );
+          window.removeEventListener("message", handler);
+        } catch (error) {
+          console.error("Pi session handoff failed", error);
+        }
+      };
+      window.addEventListener("message", handler);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 # Receive the short-lived, signed app session handed off by the top-level
 # Pi SDK page. The token is issued only after the FastAPI backend verifies
 # the Pi access token against the Platform API.
