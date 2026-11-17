@@ -53,7 +53,7 @@ html,body{margin:0;width:100%;height:100%;font-family:Arial,sans-serif;backgroun
      if(!response.ok)throw new Error(data.detail||"Backend verification failed.");
      if(!data.app_session_token||!data.user||!data.user.uid)throw new Error("Verified session response is incomplete.");
      // Handoff the signed app session to Streamlit via URL fragment, never as a query string.
-     const appUrl=new URL("https://pib2bnexus.onrender.com/");
+     const appUrl=new URL("https://pib2bnexus.com/");
      appUrl.hash="pi_session="+encodeURIComponent(data.app_session_token);
      document.getElementById("app").src=appUrl.toString();
      setStatus("Signed in as @"+data.user.username+". Loading your workspace...");
