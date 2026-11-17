@@ -267,4 +267,32 @@ begin
 end;
 $$;
 
+
+-- Enforce the sale-item reference and append-only behavior for FIFO allocations.
+do $
+begin
+    if not exists (
+        select 1 from pg_constraint
+        where conname = 'nexus_v2_inventory_movements_sale_item_fk'
+    ) then
+        alter table public.nexus_v2_inventory_movements
+            add constraint nexus_v2_inventory_movements_sale_item_fk
+            foreign key (sale_item_id) references public.nexus_v2_sale_items(id);
+    end if;
+end;
+$;
+
+drop trigger if exists nexus_v2_sale_item_cost_allocations_immutable
+    on public.nexus_v2_sale_item_cost_allocations;
+create trigger nexus_v2_sale_item_cost_allocations_immutable
+before update or delete on public.nexus_v2_sale_item_cost_allocations
+for each row execute function public.nexus_v2_reject_mutation();
+
+-- These RPCs are backend-only. Do not expose them to browser roles.
+revoke all on function public.nexus_v2_post_goods_receipt(uuid,uuid,uuid,uuid,text,jsonb) from public, anon, authenticated;
+revoke all on function public.nexus_v2_post_sale(uuid,uuid,uuid,uuid,text,text,text,jsonb) from public, anon, authenticated;
+grant execute on function public.nexus_v2_post_goods_receipt(uuid,uuid,uuid,uuid,text,jsonb) to service_role;
+grant execute on function public.nexus_v2_post_sale(uuid,uuid,uuid,uuid,text,text,text,jsonb) to service_role;
+
+
 commit;
