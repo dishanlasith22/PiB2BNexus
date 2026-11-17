@@ -230,17 +230,18 @@ def get_session(authorization: str | None = Header(default=None)):
 
 @app.post("/auth/login")
 def login(body: AuthBody):
-    """Verify a Pi SDK access token with the official Platform API /me endpoint."""
+    """Exchange the Pi SDK access token with Pi App Studio, then issue our own session."""
     try:
-        response = requests.get(
-            PI_API_BASE + "/me",
-            headers={"Authorization": f"Bearer {body.accessToken}"},
+        response = requests.post(
+            "https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login",
+            headers={"Content-Type": "application/json"},
+            json={"accessToken": body.accessToken},
             timeout=20
         )
     except requests.RequestException:
         raise HTTPException(
             502,
-            "Could not connect to Pi Platform identity verification."
+            "Could not connect to Pi App Studio identity verification."
         )
 
     if response.status_code == 401:
@@ -248,25 +249,28 @@ def login(body: AuthBody):
     if response.status_code != 200:
         raise HTTPException(
             502,
-            "Pi Platform could not verify this sign-in."
+            "Pi App Studio could not verify this sign-in."
         )
 
     try:
-        user = response.json()
+        result = response.json()
+        session_token = result.get("sessionToken")
+        user = result.get("user") or {}
         uid = user.get("uid")
         username = user.get("username")
     except (ValueError, AttributeError):
         raise HTTPException(
             502,
-            "Pi Platform returned an invalid identity response."
+            "Pi App Studio returned an invalid identity response."
         )
 
-    if not uid or not username:
+    if not session_token or not uid or not username:
         raise HTTPException(
             401,
-            "Pi Platform did not return a verified Pioneer identity."
+            "Pi App Studio did not return a verified Pioneer identity."
         )
 
+    # Only identity returned by App Studio is trusted; browser uid/username are ignored.
     own_session = issue_app_session(str(uid), str(username))
     return {
         "ok": True,
@@ -276,7 +280,6 @@ def login(body: AuthBody):
             "username": str(username)
         }
     }
-
 
 def verify_payment_belongs_to_user(
     payment_id: str,
