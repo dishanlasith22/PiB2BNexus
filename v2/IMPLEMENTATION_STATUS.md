@@ -20,13 +20,15 @@ This is a rough milestone estimate, not a measured feature-completion metric. No
 - [x] Draft restrictive RLS/access and append-only ledger migration (`002_v2_security_and_immutability.sql`)
 - [x] Draft FIFO cost-layer schema and transactional goods-receipt/POS posting functions (`003_v2_fifo_cost_layers_and_pos.sql`)
 - [x] POS RPC execution restricted to the backend service role in the migration draft
+- [x] Follow-up static review fixed malformed PostgreSQL DO-block quoting in migration 003
+- [x] Added a database uniqueness guard for receipt idempotency keys (shop + dealer + external reference)
 
 ## Not yet implemented or verified
 
 - [ ] Restorable backup of the existing Supabase project
 - [ ] Full database audit (grants, RLS enabled state, constraints, functions, sequences, data quality and actual data relationships)
 - [ ] Execute and validate migrations in a separate disposable/test Supabase project
-- [ ] SQL linting, automated database tests and rollback/recovery procedure
+- [ ] SQL linting, automated database tests and rollback/recovery procedure (static source review is not a substitute)
 - [ ] Backend API routes, input schemas and structured error handling for receipt/POS functions
 - [ ] Pi identity token verification and durable application sessions
 - [ ] Dealer/shop/customer role and tenant ownership authorization before RPC invocation
