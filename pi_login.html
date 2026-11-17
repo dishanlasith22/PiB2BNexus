@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PIB2BNexus — Pi Network</title>
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
+<style>
+:root{font-family:Arial,sans-serif;color:#24212a;background:#f7f5fa}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column}
+header{background:#fff;border-bottom:1px solid #e4dfea;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{font-size:19px;font-weight:700}
+.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button{border:0;border-radius:8px;padding:12px 18px;background:#7027a0;color:#fff;font-weight:700;cursor:pointer}
+button.secondary{background:#4b3b57}
+button:disabled{opacity:.5;cursor:not-allowed}
+#status{font-size:13px;max-width:460px}
+main{flex:1;min-height:0}
+#workspace{width:100%;height:calc(100vh - 68px);border:0;display:block;background:#fff}
+#hint{padding:12px 18px;background:#fff;border-bottom:1px solid #eee;font-size:12px;color:#61586a}
+@media(max-width:650px){header{align-items:flex-start}.actions{width:100%}#status{width:100%;max-width:none}#workspace{height:calc(100vh - 124px)}}
+</style>
+</head>
+<body>
+<header>
+ <div class="brand">π PIB2BNexus</div>
+ <div class="actions">
+  <button id="login">Sign in with Pi</button>
+  <button id="pay" class="secondary" hidden disabled>Test Pi payment</button>
+  <span id="status">Open this page in Pi Browser, then sign in.</span>
+ </div>
+</header>
+<div id="hint">Secure Pi Network sign-in · Testnet environment</div>
+<main>
+ <iframe id="workspace" title="PIB2BNexus workspace" src="https://pib2bnexus.onrender.com/?embed=true" allow="clipboard-read; clipboard-write"></iframe>
+</main>
+<script>
+(()=>{
+ const API=location.origin;
+ const APP="https://pib2bnexus.onrender.com/";
+ const loginBtn=document.getElementById("login");
+ const payBtn=document.getElementById("pay");
+ const status=document.getElementById("status");
+ const frame=document.getElementById("workspace");
+ let piInit=null, sessionToken="", config={payments_enabled:false};
+ const say=(message)=>{status.textContent=message;};
+ async function request(path,options={}){
+   const response=await fetch(API+path,options);
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(data.detail||"Request failed ("+response.status+")");
+   return data;
+ }
+ function loadWorkspace(token){
+   sessionToken=token;
+   const target=new URL(APP);
+   target.hash="pi_session="+encodeURIComponent(token);
+   frame.src=target.toString();
+ }
+ async function initPi(){
+   if(!window.Pi)throw new Error("Pi SDK not found. Open this registered app inside Pi Browser.");
+   if(!piInit)piInit=window.Pi.init({version:"2.0",sandbox:true});
+   await piInit;
+ }
+ async function signIn(){
+   loginBtn.disabled=true;say("Connecting to Pi Network...");
+   try{
+     await initPi();
+     say("Approve the sign-in request in Pi Browser...");
+     const auth=await window.Pi.authenticate(["username"],payment=>{
+       console.warn("Incomplete payment callback",payment);
+     });
+     if(!auth||!auth.accessToken)throw new Error("Pi did not return an access token.");
+     say("Verifying your Pioneer account...");
+     const verified=await request("/auth/login",{
+       method:"POST",
+       headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({accessToken:auth.accessToken})
+     });
+     if(!verified.app_session_token||!verified.user||!verified.user.username)
+       throw new Error("The backend did not return a verified session.");
+     sessionStorage.setItem("pib2bnexus_session",verified.app_session_token);
+     loadWorkspace(verified.app_session_token);
+     loginBtn.textContent="Signed in as @"+verified.user.username;
+     loginBtn.disabled=true;
+     payBtn.hidden=!config.payments_enabled;
+     payBtn.disabled=!config.payments_enabled;
+     say("Pi sign-in successful. Your workspace is loading.");
+   }catch(error){
+     piInit=null;
+     say("Sign-in error: "+(error.message||String(error)));
+     loginBtn.disabled=false;
+   }
+ }
+ async function testPayment(){
+   if(!sessionToken||!config.payments_enabled)return;
+   payBtn.disabled=true;say("Opening Pi Wallet for the Testnet payment...");
+   try{
+     await initPi();
+     window.Pi.createPayment({
+       amount:Number(config.payment_amount),
+       memo:config.payment_memo,
+       metadata:{app:"PIB2BNexus",purpose:"testnet-login-payment-check"}
+     },{
+       onReadyForServerApproval:async(paymentId)=>{
+         try{
+           await request("/payments/approve",{
+             method:"POST",
+             headers:{"Content-Type":"application/json","Authorization":"Bearer "+sessionToken},
+             body:JSON.stringify({paymentId})
+           });
+           say("Payment approved by PIB2BNexus. Waiting for Pi transaction confirmation...");
+         }catch(error){say("Payment approval failed: "+error.message);payBtn.disabled=false;}
+       },
+       onReadyForServerCompletion:async(paymentId,txid)=>{
+         try{
+           const result=await request("/payments/complete",{
+             method:"POST",
+             headers:{"Content-Type":"application/json","Authorization":"Bearer "+sessionToken},
+             body:JSON.stringify({paymentId,txid})
+           });
+           if(!result.ok)throw new Error("Pi Platform did not verify completion.");
+           say("Testnet payment completed and verified successfully.");
+         }catch(error){say("Payment completion failed: "+error.message);}
+         finally{payBtn.disabled=false;}
+       },
+       onCancel:()=>{say("Pi payment cancelled.");payBtn.disabled=false;},
+       onError:(error)=>{say("Pi payment error: "+(error.message||String(error)));payBtn.disabled=false;}
+     });
+   }catch(error){say("Could not start payment: "+error.message);payBtn.disabled=false;}
+ }
+ loginBtn.addEventListener("click",signIn);
+ payBtn.addEventListener("click",testPayment);
+ request("/public-config").then(data=>{
+   config=data;
+   if(data.payments_enabled){
+     payBtn.hidden=false;
+     payBtn.disabled=!sessionToken;
+     payBtn.textContent="Test payment · "+data.payment_amount+" Pi";
+   }
+   if(data.sandbox!==true)document.getElementById("hint").textContent="Warning: backend is not in Sandbox mode.";
+ }).catch(error=>say("Could not load app configuration: "+error.message));
+ const saved=sessionStorage.getItem("pib2bnexus_session");
+ if(saved){
+   request("/auth/session",{headers:{"Authorization":"Bearer "+saved}}).then(data=>{
+     if(data.user&&data.user.username){
+       loadWorkspace(saved);
+       loginBtn.textContent="Signed in as @"+data.user.username;
+       loginBtn.disabled=true;
+       if(config.payments_enabled)payBtn.disabled=false;
+       say("Existing Pi session restored.");
+     }
+   }).catch(()=>sessionStorage.removeItem("pib2bnexus_session"));
+ }
+})();
+</script>
+</body>
+</html>
