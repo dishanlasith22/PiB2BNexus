@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-import streamlit.components.v1 as components
 from pi_integration import render_pi_component
 
 st.set_page_config(page_title="PiPOS B2B2C Platform", page_icon="🛍️", layout="wide")
@@ -21,71 +20,19 @@ st.sidebar.markdown("---")
 
 backend_url = os.getenv("PI_BACKEND_URL", "").rstrip("/")
 
-# Securely receive the one-time Pi app session from the top-level page.
-# The parent and this Streamlit document share the registered app origin.
-st.components.v1.html(
-    """
-    <script>
-    (function () {
-      const parentWindow = window.parent;
-      const handler = async function (event) {
-        if (event.origin !== parentWindow.location.origin ||
-            event.source !== parentWindow ||
-            !event.data || event.data.type !== "PIB2B_PI_SESSION") return;
-        const token = event.data.token;
-        if (!token || typeof token !== "string") return;
-        try {
-          const response = await fetch(
-            "" + "https://pib2bnexus-pi-backend.onrender.com/auth/session",
-            {headers: {"Authorization": "Bearer " + token}}
-          );
-          const result = await response.json();
-          if (!response.ok || !result.user) throw new Error("Session verification failed.");
-          parentWindow.postMessage(
-            {type:"PIB2B_PI_SESSION_ACCEPTED", token:token, user:result.user},
-            event.origin
-          );
-          window.removeEventListener("message", handler);
-        } catch (error) {
-          console.error("Pi session handoff failed", error);
-        }
-      };
-      window.addEventListener("message", handler);
-    })();
-    </script>
-    """,
-    height=0,
-)
-
-# Receive the short-lived, signed app session handed off by the top-level
-# Pi SDK page. The token is issued only after the FastAPI backend verifies
-# the Pi access token against the Platform API.
-# Read the one-time login handoff from the URL fragment via a small
-# Streamlit component. Fragments are not sent to the web server in HTTP requests.
-_fragment_reader = components.html(
-    """
-    <script>
-    (function(){
-      const match = window.parent.location.hash.match(/(?:^#|&)pi_session=([^&]+)/);
-      if (match) {
-        const token = decodeURIComponent(match[1]);
-        window.parent.history.replaceState(null, "", window.parent.location.pathname);
-        window.parent.postMessage({type:"PIB2B_PI_SESSION", token:token}, window.parent.location.origin);
-      }
-    })();
-    </script>
-    """,
-    height=0,
-)
-
 payment_amount = float(os.getenv("PI_PAYMENT_AMOUNT", "0"))
 payment_memo = os.getenv("PI_PAYMENT_MEMO", "PIB2BNexus demo payment")
 payment_enabled = bool(backend_url and payment_amount > 0)
 
 if not st.session_state.pi_authenticated:
     st.sidebar.warning("🔒 Sign in with Pi Network")
-    login_url = os.getenv("PI_LOGIN_URL", "https://pib2bnexus.com")
-    st.sidebar.link_button("Sign in with Pi", login_url, use_container_width=True)
+    result = render_pi_component(backend_url=backend_url, payment_enabled=False)
+    if isinstance(result, dict) and result.get("verified") and result.get("app_session_token"):
+        st.session_state.pi_authenticated = True
+        st.session_state.pi_app_session_token = result["app_session_token"]
+        st.session_state.pi_uid = result["uid"]
+        st.session_state.username = result["username"]
+        st.rerun()
 
 else:
     st.sidebar.success(f"🟢 Verified Pioneer: {st.session_state.username}")
@@ -106,19 +53,7 @@ if not st.session_state.pi_authenticated:
     st.markdown("### A paperless business ecosystem powered by Pi Network.")
     st.info("Open PIB2BNexus in Pi Browser and use the Sign in with Pi button.")
 else:
-    # Optional Pi payment test panel. Amount and memo are server-configured.
-    with st.expander("π Pi Wallet – configured payment test"):
-        if not payment_enabled:
-            st.warning("Pi payments are disabled until PI_PAYMENT_AMOUNT is configured on Render.")
-        pay_result = render_pi_component(
-            backend_url=backend_url,
-            app_session_token=st.session_state.pi_app_session_token,
-            payment_enabled=payment_enabled,
-            payment_amount=payment_amount,
-            payment_memo=payment_memo,
-        )
-        if isinstance(pay_result, dict) and pay_result.get("payment_verified"):
-            st.success("Pi Platform confirmed the payment completion.")
+    st.info("Pi test payments are available from the secure Pi login page above the workspace.")
 
     role = st.session_state.user_role
     if role == "Customer":
