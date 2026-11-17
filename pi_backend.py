@@ -99,8 +99,13 @@ def login(body: AuthBody):
     if not appstudio_session or not uid or not username:
         raise HTTPException(401, "Pi App Studio did not return a verified Pioneer identity.")
     own_session = issue_app_session(str(uid), str(username))
-    return {"ok": True, "app_session_token": own_session,
-            "user": {"uid": str(uid), "username": str(username)}}
+   return {
+    "ok": True,
+    "verified": True,
+    "app_session_token": own_session,
+    "uid": str(uid),
+    "username": str(username)
+}
 
 def verify_payment_belongs_to_user(payment_id: str, uid: str):
     response = pi_api("GET", f"/payments/{payment_id}")
