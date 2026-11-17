@@ -30,7 +30,7 @@ button:disabled{opacity:.55;cursor:wait}
  });
  async function initPi(){
    if(!window.Pi)throw new Error("Pi SDK did not load. Open this app in Pi Desktop or Pi Browser.");
-   if(!piInit)piInit=window.Pi.init({version:"2.0"});
+   if(!piInit)piInit=window.Pi.init({version:"2.0",sandbox:true});
    await piInit;
  }
  async function signIn(){
@@ -39,7 +39,7 @@ button:disabled{opacity:.55;cursor:wait}
    try{
      await initPi();
      setStatus("Approve the Pi sign-in request...");
-     const auth=await window.Pi.authenticate(["username"],payment=>{
+     const auth=await window.Pi.authenticate(["username","payments"],payment=>{
        console.warn("Incomplete payment found",payment);
      });
      if(!auth||!auth.accessToken)throw new Error("Pi did not provide an access token.");
