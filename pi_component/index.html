@@ -105,7 +105,8 @@ button:disabled{opacity:.55;cursor:not-allowed}
     }
   });
 
- async function ensurePiReady(){
+
+async function ensurePiReady(){
   if(!window.Pi){
     throw new Error("Pi SDK script not available.");
   }
@@ -113,19 +114,27 @@ button:disabled{opacity:.55;cursor:not-allowed}
   mark(1,"ok");
   mark(2,"wait");
 
-  if(!piInitPromise){
-    piInitPromise=Promise.race([
-      window.Pi.init({version:"2.0"}),
-      new Promise((_,reject)=>setTimeout(
-        ()=>reject(new Error("Pi.init timed out after 30 seconds.")),
-        30000
-      ))
-    ]);
-  }
+  try {
+    if(!piInitPromise){
+      piInitPromise = window.Pi.init({
+        version: "2.0"
+      });
+    }
 
-  await piInitPromise;
-  mark(2,"ok");
+    await piInitPromise;
+    mark(2,"ok");
+
+  } catch(error) {
+    piInitPromise = null;
+    mark(2,"fail");
+
+    throw new Error(
+      "Pi SDK initialization failed: " +
+      (error && error.message ? error.message : String(error))
+    );
+  }
 }
+
 
   async function backendPost(path,token,body){
     const headers={"Content-Type":"application/json"};
