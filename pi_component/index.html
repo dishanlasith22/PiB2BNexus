@@ -28,6 +28,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
   <button id="pay" disabled>Pay with Pi</button>
   <div class="small" id="payhint"></div>
 </div>
+
 <script>
 (function(){
   const login=document.getElementById("login");
@@ -105,36 +106,35 @@ button:disabled{opacity:.55;cursor:not-allowed}
     }
   });
 
-
-async function ensurePiReady(){
-  if(!window.Pi){
-    throw new Error("Pi SDK script not available.");
-  }
-
-  mark(1,"ok");
-  mark(2,"wait");
-
-  try {
-    if(!piInitPromise){
-      piInitPromise = window.Pi.init({
-        version: "2.0"
-      });
+  async function ensurePiReady(){
+    if(!window.Pi){
+      throw new Error("Pi SDK script not available.");
     }
 
-    await piInitPromise;
-    mark(2,"ok");
+    mark(1,"ok");
+    mark(2,"wait");
 
-  } catch(error) {
-    piInitPromise = null;
-    mark(2,"fail");
+    try {
+      if(!piInitPromise){
+        piInitPromise = window.Pi.init({
+          version: "2.0",
+          sandbox: true
+        });
+      }
 
-    throw new Error(
-      "Pi SDK initialization failed: " +
-      (error && error.message ? error.message : String(error))
-    );
+      await piInitPromise;
+      mark(2,"ok");
+
+    } catch(error) {
+      piInitPromise = null;
+      mark(2,"fail");
+
+      throw new Error(
+        "Pi SDK initialization failed: " +
+        (error && error.message ? error.message : String(error))
+      );
+    }
   }
-}
-
 
   async function backendPost(path,token,body){
     const headers={"Content-Type":"application/json"};
