@@ -20,6 +20,10 @@ create table if not exists public.nexus_v2_cost_layers (
     check (remaining_quantity <= original_quantity)
 );
 
+create unique index if not exists nexus_v2_goods_receipts_external_ref_uidx
+    on public.nexus_v2_goods_receipts (shop_id, dealer_id, external_reference)
+    where external_reference is not null;
+
 create index if not exists nexus_v2_cost_layers_fifo_idx
     on public.nexus_v2_cost_layers (branch_id, product_id, received_at, id)
     where remaining_quantity > 0;
@@ -269,7 +273,7 @@ $$;
 
 
 -- Enforce the sale-item reference and append-only behavior for FIFO allocations.
-do $
+do $$
 begin
     if not exists (
         select 1 from pg_constraint
@@ -280,7 +284,7 @@ begin
             foreign key (sale_item_id) references public.nexus_v2_sale_items(id);
     end if;
 end;
-$;
+$$;
 
 drop trigger if exists nexus_v2_sale_item_cost_allocations_immutable
     on public.nexus_v2_sale_item_cost_allocations;
