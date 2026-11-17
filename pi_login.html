@@ -59,7 +59,7 @@ main{flex:1;min-height:0}
  }
  async function initPi(){
    if(!window.Pi)throw new Error("Pi SDK not found. Open this registered app inside Pi Browser.");
-   if(!piInit)piInit=window.Pi.init({version:"2.0",sandbox:true});
+   if(!piInit)piInit=window.Pi.init({version:"2.0"});
    await piInit;
  }
  async function signIn(){
