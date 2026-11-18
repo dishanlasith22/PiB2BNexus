@@ -1,68 +1,42 @@
-import React from "react";
-import { ArrowRight, Boxes, Store, Truck, ShieldCheck, Globe2, CircleCheck } from "lucide-react";
+import React, { useState } from "react";
+import { ArrowLeft, ArrowRight, Boxes, Store, Truck, ShieldCheck, Globe2, CircleCheck, LayoutDashboard, Package, ClipboardList, Wallet, Users, ScanLine, Gift, Search, Bell, Plus, TrendingUp } from "lucide-react";
 
 const roles = [
-  { icon: Store, title: "Shop Owner", text: "Run your shop, manage branches, sell products and track stock." },
-  { icon: Truck, title: "Dealer", text: "Share your catalogue, deliver stock and follow settlements." },
-  { icon: Boxes, title: "Customer", text: "Discover shops, scan bills, pay with Pi and collect rewards." }
+  { id:"shop", icon:Store, title:"Shop Owner", text:"POS billing, branches, stock control, promotions and dealer settlements." },
+  { id:"dealer", icon:Truck, title:"Dealer", text:"Product catalogue, shop orders, deliveries and daily settlement tracking." },
+  { id:"customer", icon:Boxes, title:"Customer", text:"Discover shops, scan bills, Pi checkout, purchase history and rewards." }
 ];
 
-export default function App() {
-  return (
-    <main className="page-shell">
-      <nav className="nav">
-        <a className="brand" href="/" aria-label="PIB2BNexus home">
-          <span className="brand-mark">π</span><span>PIB2B<span className="brand-accent">NEXUS</span></span>
-        </a>
-        <div className="nav-right"><span className="status-dot" /> Development Preview</div>
-      </nav>
+const demoProducts=[{name:"Rice 5kg",sku:"FD-1001",qty:42,price:"π 8.50"},{name:"Coconut Oil 1L",sku:"FD-1002",qty:18,price:"π 4.20"},{name:"Milk Powder 400g",sku:"FD-1003",qty:7,price:"π 3.80"}];
 
-      <section className="hero">
-        <div className="hero-copy">
-          <div className="eyebrow"><Globe2 size={15} /> PI-POWERED COMMERCE NETWORK</div>
-          <h1>One network.<br /><span>Every business</span><br />connected.</h1>
-          <p className="hero-lede">A smarter way for dealers, shops and customers to connect, trade and grow with Pi.</p>
-          <div className="hero-actions">
-            <a className="primary-btn" href="#portals">Explore the platform <ArrowRight size={17} /></a>
-            <span className="secure-note"><ShieldCheck size={16} /> Built for trusted commerce</span>
-          </div>
-        </div>
-        <div className="hero-panel">
-          <div className="panel-glow" />
-          <div className="orbit orbit-one" /><div className="orbit orbit-two" />
-          <div className="core-logo">π</div>
-          <div className="orbit-label label-top">DEALERS</div>
-          <div className="orbit-label label-right">SHOPS</div>
-          <div className="orbit-label label-bottom">CUSTOMERS</div>
-          <div className="connection-line line-a" /><div className="connection-line line-b" /><div className="connection-line line-c" />
-          <div className="panel-caption"><span className="live-pulse" /> Connected commerce ecosystem</div>
-        </div>
-      </section>
+function Dashboard({role,onBack}){
+  const config={
+    shop:{title:"Shop Workspace",sub:"Manage your store operations",nav:[["Overview",LayoutDashboard],["POS Billing",ScanLine],["Inventory",Package],["Dealer Orders",ClipboardList],["Customers & Loyalty",Users],["Promotions",Gift],["Settlements",Wallet]],stats:[["Today's Sales","π 248.50","+12.8%"],["Orders","36","+8 today"],["Stock Items","128","6 low stock"],["Dealer Payable","π 84.20","Pending review"]]},
+    dealer:{title:"Dealer Workspace",sub:"Manage supply, deliveries and settlements",nav:[["Overview",LayoutDashboard],["Product Catalogue",Package],["Shop Orders",ClipboardList],["Deliveries",Truck],["Shop Accounts",Store],["Settlement",Wallet]],stats:[["Today's Supply","π 520.00","+6 orders"],["Active Shops","24","4 new"],["Deliveries","12","3 in progress"],["Settlement Due","π 186.40","Preview estimate"]]},
+    customer:{title:"Customer Wallet",sub:"Your shopping and Pi rewards hub",nav:[["Overview",LayoutDashboard],["Discover Shops",Store],["Scan & Pay",ScanLine],["Purchase History",ClipboardList],["Rewards",Gift],["Referrals",Users]],stats:[["Total Purchases","π 84.60","This month"],["Pi Rewards","π 2.40","+0.6 this week"],["Transactions","12","All successful*"],["Referrals","2 / 2","Shop referral limit"]]}
+  }[role];
+  const [active,setActive]=useState("Overview");
+  const roleLabel={shop:"SHOP OWNER",dealer:"DEALER",customer:"CUSTOMER"}[role];
+  return <main className="dash-wrap">
+    <header className="dash-top"><button className="back-btn" onClick={onBack}><ArrowLeft size={16}/> Back to portals</button><div className="dash-brand"><span className="brand-mark">π</span> PIB2B<span className="brand-accent">NEXUS</span></div><span className="preview-chip">DEMO PREVIEW</span></header>
+    <div className="dash-layout"><aside className="sidebar"><div className="role-tag">{roleLabel}</div><h2>{config.title}</h2><p>{config.sub}</p><nav className="side-nav">{config.nav.map(([label,Icon])=><button key={label} className={active===label?"side-link selected":"side-link"} onClick={()=>setActive(label)}><Icon size={17}/>{label}</button>)}</nav><div className="sidebar-foot"><ShieldCheck size={15}/> Pi sign-in will be connected after UI review</div></aside>
+      <section className="dash-main"><div className="dash-heading"><div><div className="eyebrow">PIB2BNEXUS / {roleLabel}</div><h1>{active}</h1><p>Welcome back. Here is your workspace snapshot.</p></div><button className="icon-btn" aria-label="Notifications"><Bell size={18}/></button></div>
+        <div className="demo-alert">Preview data only — these figures are examples, not live transactions.</div>
+        {active==="Overview" ? <>
+          <div className="stat-grid">{config.stats.map(([label,value,foot])=><article className="stat-card" key={label}><span>{label}</span><strong>{value}</strong><small><TrendingUp size={13}/>{foot}</small></article>)}</div>
+          <div className="dash-columns"><article className="dash-card"><div className="card-head"><h3>{role==="customer"?"Recent purchases":"Recent activity"}</h3><span>View all</span></div>{(role==="customer"?[["Green Valley Grocery","Today · 10:42 AM","π 12.50"],["City Mart","Yesterday","π 8.20"],["Fresh Choice","16 Nov","π 5.60"]]:role==="dealer"?[["New order · City Mart","Today · 10:42 AM","Pending"],["Delivery · Green Stores","Today · 09:15 AM","In transit"],["Settlement batch","Yesterday","Ready"]]:[["POS sale · INV-1048","Today · 10:42 AM","π 12.50"],["Stock received · Rice 5kg","Today · 09:30 AM","+20 units"],["Dealer order · D-204","Yesterday","Pending"]]).map((row)=><div className="activity-row" key={row[0]}><div className="activity-dot"/><div><b>{row[0]}</b><small>{row[1]}</small></div><strong>{row[2]}</strong></div>)}</article>
+          <article className="dash-card"><div className="card-head"><h3>{role==="customer"?"Recommended shops":"Quick actions"}</h3><span>Explore</span></div>{(role==="customer"?["Green Valley Grocery","City Mart","Fresh Choice"]:role==="dealer"?["Add product","Create shop order","Record delivery"]:["New POS sale","Receive stock","Create promotion"]).map((item,i)=><button className="quick-row" key={item} onClick={()=>setActive(role==="customer"?"Discover Shops":role==="dealer"?"Product Catalogue":"POS Billing")}><span className="quick-icon">{i+1}</span>{item}<ArrowRight size={15}/></button>)}</article></div>
+        </>:<article className="dash-card detail-card"><div className="card-head"><h3>{active}</h3><button className="small-action"><Plus size={14}/> {role==="customer"?"Explore":"Add new"}</button></div>{active.toLowerCase().includes("inventory")||active.toLowerCase().includes("catalogue")?<><div className="table-head"><span>PRODUCT</span><span>SKU</span><span>QTY</span><span>PRICE</span></div>{demoProducts.map(p=><div className="table-row" key={p.sku}><b>{p.name}</b><span>{p.sku}</span><span>{p.qty}</span><strong>{p.price}</strong></div>)}</>:<div className="empty-preview"><div className="empty-icon"><Package size={24}/></div><h3>{active} interface preview</h3><p>This screen layout is ready for the next implementation stage. Data and actions will be connected to the secured backend.</p></div>}</article>}
+        <p className="dash-disclaimer">* All dashboard values and records are illustrative UI preview content.</p>
+      </section></div>
+  </main>
+}
 
-      <section className="portals" id="portals">
-        <div className="section-heading">
-          <div><div className="eyebrow">THE PIB2BNEXUS ECOSYSTEM</div><h2>Choose your workspace</h2></div>
-          <p>One platform, designed around the way you do business.</p>
-        </div>
-        <div className="role-grid">
-          {roles.map(({icon: Icon, title, text}, index) => (
-            <article className="role-card" key={title}>
-              <div className="role-icon"><Icon size={22} /></div>
-              <div className="role-number">0{index + 1}</div>
-              <h3>{title}</h3><p>{text}</p>
-              <span className="card-link">Workspace preview <ArrowRight size={15} /></span>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="login-strip">
-        <div className="login-symbol">π</div>
-        <div><h3>Pi Network sign-in</h3><p>Secure Pi authentication is being connected to this new web experience.</p></div>
-        <span className="integration-state"><CircleCheck size={15} /> Integration in progress</span>
-      </section>
-
-      <footer><span>© {new Date().getFullYear()} PIB2BNexus</span><span>Connecting commerce with Pi</span></footer>
-    </main>
-  );
+export default function App(){
+  const [role,setRole]=useState(null);
+  if(role) return <Dashboard role={role} onBack={()=>setRole(null)}/>;
+  return <main className="page-shell"><nav className="nav"><a className="brand" href="#"><span className="brand-mark">π</span><span>PIB2B<span className="brand-accent">NEXUS</span></span></a><div className="nav-right"><span className="status-dot"/> Development Preview</div></nav>
+    <section className="hero"><div className="hero-copy"><div className="eyebrow"><Globe2 size={15}/> PI-POWERED COMMERCE NETWORK</div><h1>One network.<br/><span>Every business</span><br/>connected.</h1><p className="hero-lede">A smarter way for dealers, shops and customers to connect, trade and grow with Pi.</p><div className="hero-actions"><a className="primary-btn" href="#portals">Explore the platform <ArrowRight size={17}/></a><span className="secure-note"><ShieldCheck size={16}/> Built for trusted commerce</span></div></div><div className="hero-panel"><div className="panel-glow"/><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="core-logo">π</div><div className="orbit-label label-top">DEALERS</div><div className="orbit-label label-right">SHOPS</div><div className="orbit-label label-bottom">CUSTOMERS</div><div className="connection-line line-a"/><div className="connection-line line-b"/><div className="connection-line line-c"/><div className="panel-caption"><span className="live-pulse"/> Connected commerce ecosystem</div></div></section>
+    <section className="portals" id="portals"><div className="section-heading"><div><div className="eyebrow">THE PIB2BNEXUS ECOSYSTEM</div><h2>Choose your workspace</h2></div><p>Select a portal to explore its frontend dashboard preview.</p></div><div className="role-grid">{roles.map(({id,icon:Icon,title,text},index)=><button className="role-card role-button" key={id} onClick={()=>setRole(id)}><div className="role-icon"><Icon size={22}/></div><div className="role-number">0{index+1}</div><h3>{title}</h3><p>{text}</p><span className="card-link">Open dashboard <ArrowRight size={15}/></span></button>)}</div></section>
+    <section className="login-strip"><div className="login-symbol">π</div><div><h3>Pi Network sign-in</h3><p>Secure Pi authentication will be connected after the workspace UI review.</p></div><span className="integration-state"><CircleCheck size={15}/> Integration in progress</span></section><footer><span>© {new Date().getFullYear()} PIB2BNexus</span><span>Connecting commerce with Pi</span></footer></main>
 }
