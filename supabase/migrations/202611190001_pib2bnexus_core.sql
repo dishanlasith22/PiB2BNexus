@@ -90,12 +90,11 @@ insert into public.nexus_shops(shop_code,shop_name,address,phone,is_sample)
 values ('FC-KDY-001','Food City','Kandy, Sri Lanka','0812000000',true)
 on conflict(shop_code) do nothing;
 insert into public.nexus_branches(shop_id,branch_code,branch_name,address,is_sample)
-select s.id,v.code,v.name,v.address,true from public.nexus_shops s
-cross join (values
- ('FC-MAIN','Food City - Main Branch','Kandy City Centre, Kandy'),
- ('FC-LAKE','Food City - Lake Road','Lake Road, Kandy'),
- ('FC-PERA','Food City - Peradeniya','Peradeniya, Kandy')
-) v(code,name,address) where s.shop_code='FC-KDY-001' on conflict(branch_code) do nothing;
+select s.id,'FC-'||lpad(g::text,3,'0'),
+ 'Food City - '||(array['Main Branch','Lake Road','Peradeniya','Katugastota','Akurana','Ampitiya','Digana','Kundasale','Tennekumbura','Gampola','Nawalapitiya','Matale','Dambulla','Kurunegala','Kegalle','Mawanella','Pilimathalawa','Gelioya','Wattegama','Pallekele'])[g],
+ (array['Kandy City Centre','Lake Road','Peradeniya','Katugastota','Akurana','Ampitiya','Digana','Kundasale','Tennekumbura','Gampola','Nawalapitiya','Matale','Dambulla','Kurunegala','Kegalle','Mawanella','Pilimathalawa','Gelioya','Wattegama','Pallekele'])[g]||', Sri Lanka',true
+from public.nexus_shops s cross join generate_series(1,20) g
+where s.shop_code='FC-KDY-001' on conflict(branch_code) do nothing;
 
 insert into public.nexus_dealers(dealer_code,business_name,phone,address,is_sample)
 select 'DL-'||lpad(g::text,3,'0'), name, '077100'||lpad(g::text,4,'0'), 'Kandy, Sri Lanka', true
@@ -137,7 +136,7 @@ on conflict(sku) do nothing;
 insert into public.nexus_inventory(branch_id,product_id,quantity,reorder_level,is_sample)
 select b.id,p.id, 12+((row_number() over(order by p.sku,b.branch_code)*7)%90), 10, true
 from public.nexus_branches b cross join public.nexus_products p
-where b.branch_code='FC-MAIN'
+where b.branch_code='FC-001'
 on conflict(branch_id,product_id) do nothing;
 
 insert into public.nexus_customers(pi_username,display_name,is_sample)
@@ -179,3 +178,10 @@ select 'FC-SET-'||lpad(g::text,4,'0'),d.id,current_date,
  (current_date+time '23:50') at time zone 'Asia/Colombo',true
 from generate_series(1,20) g join public.nexus_dealers d on d.dealer_code='DL-'||lpad(g::text,3,'0')
 on conflict(settlement_no) do nothing;
+
+insert into public.nexus_ledger(event_key,event_type,shop_id,branch_id,dealer_id,product_id,quantity_delta,unit_cost,reference_type,is_sample)
+select 'FC-SEED-STOCK-'||lpad(row_number() over(order by p.sku)::text,4,'0'),'stock_received',
+ s.id,b.id,p.dealer_id,p.id,25, p.wholesale_price,'seed',true
+from public.nexus_shops s join public.nexus_branches b on b.branch_code='FC-001'
+join public.nexus_products p on p.sku between 'FC-SKU-0001' and 'FC-SKU-0020'
+on conflict(event_key) do nothing;
