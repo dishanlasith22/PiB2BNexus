@@ -193,7 +193,7 @@ on conflict(pi_uid) do nothing;
 insert into public.nexus_stock_lots(shop_id,branch_id,dealer_id,product_id,received_at,quantity_received,quantity_remaining,unit_cost,is_sample)
 select d.shop_id,b.id,d.id,p.id,(current_date-35)::timestamptz,500,500,p.wholesale_price,true
 from public.nexus_dealers d join public.nexus_products p on p.dealer_id=d.id
-join public.nexus_branches b on b.branch_code='HK-BR-'||lpad((substring((select shop_code from public.nexus_shops where id=d.shop_id) from 8))::int::text,3,'0')
+join public.nexus_branches b on b.branch_code='HK-BR-'||lpad((substring((select shop_code from public.nexus_shops where id=d.shop_id) from 9))::int::text,3,'0')
 on conflict do nothing;
 
 -- Four completed sales per shop per day for the last 30 days = 2,400 sales.
@@ -228,6 +228,12 @@ select sa.id,p.id,p.dealer_id,1,p.retail_price,p.wholesale_price,p.retail_price,
 from public.nexus_sales sa join public.nexus_products p on p.dealer_id=sa.dealer_id
 where sa.receipt_no like 'HK-SALE-%' and p.sku in ((select d.dealer_code||'-SKU-01' from public.nexus_dealers d where d.id=sa.dealer_id),(select d.dealer_code||'-SKU-02' from public.nexus_dealers d where d.id=sa.dealer_id))
 on conflict do nothing;
+
+-- Decrement FIFO opening lots by the sold quantity after cost snapshots have been recorded.
+update public.nexus_stock_lots lot set quantity_remaining = greatest(0, lot.quantity_received - coalesce(sold.qty,0))
+from (select si.product_id, sum(si.quantity) qty from public.nexus_sale_items si
+ join public.nexus_sales sa on sa.id=si.sale_id where sa.receipt_no like 'HK-SALE-%' group by si.product_id) sold
+where lot.product_id=sold.product_id and lot.is_sample=true;
 
 -- Reconcile sample receipts to their two item lines and record stock movements.
 update public.nexus_sales sa set subtotal=x.line_total,total=x.line_total
