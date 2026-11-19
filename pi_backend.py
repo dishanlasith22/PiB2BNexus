@@ -737,8 +737,8 @@ def create_workspace_record(resource: str, body: DataWrite, authorization: str |
     payload = {k:v for k,v in body.data.items() if k in WRITE_FIELDS[resource]}
     try:
         if resource == "products":
-            if not payload.get("sku") or not payload.get("product_name") or not payload.get("category"):
-                raise HTTPException(400, "SKU, product name and category are required.")
+            if not payload.get("sku") or not payload.get("product_name") or not payload.get("category") or not payload.get("dealer_id"):
+                raise HTTPException(400, "SKU, product name, category and supplying dealer are required.")
             if payload.get("dealer_id"):
                 if payload["dealer_id"] not in [d["id"] for d in db.table("nexus_dealers").select("id").eq("shop_id",shop["id"]).execute().data]:
                     raise HTTPException(403, "Dealer does not belong to this shop.")
