@@ -819,7 +819,13 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             query = query.in_("dealer_id", list(set(dealer_ids)))
         elif resource == "customers":
             if not identity["shops"]: raise HTTPException(403, "Shop owner access required.")
-            query = query.in_("home_shop_id", [x["id"] for x in identity["shops"]])
+            shop_ids = [x["id"] for x in identity["shops"]]
+            home_rows = db.table("nexus_customers").select("id").in_("home_shop_id", shop_ids).execute().data
+            referred_rows = db.table("nexus_customer_referrals").select("referred_customer_id").in_("shop_id", shop_ids).execute().data
+            customer_ids = list({x["id"] for x in home_rows} | {x["referred_customer_id"] for x in referred_rows})
+            if not customer_ids:
+                return {"ok": True, "items": []}
+            query = query.in_("id", customer_ids)
         elif resource == "dealers":
             shop_ids = [x["id"] for x in identity["shops"]]
             dealer_ids = [x["id"] for x in identity["dealers"]]
@@ -858,7 +864,14 @@ def create_sale(body: SaleCreate, authorization: str | None = Header(default=Non
     try:
         branch = db.table("nexus_branches").select("id,shop_id").eq("id", body.branch_id).in_("shop_id", shop_ids).single().execute().data
         if body.customer_id:
-            customer = db.table("nexus_customers").select("id").eq("id", body.customer_id).eq("home_shop_id", branch["shop_id"]).single().execute().data
+            customer_rows = db.table("nexus_customers").select("id,home_shop_id").eq("id", body.customer_id).limit(1).execute().data
+            if not customer_rows:
+                raise HTTPException(400, "Selected customer profile was not found.")
+            customer = customer_rows[0]
+            if customer.get("home_shop_id") != branch["shop_id"]:
+                referral_link = db.table("nexus_customer_referrals").select("id").eq("shop_id", branch["shop_id"]).eq("referred_customer_id", body.customer_id).limit(1).execute().data
+                if not referral_link:
+                    raise HTTPException(403, "Customer is not linked to this shop. Ask them to redeem this shop's referral code first.")
         product_ids = [line.product_id for line in body.lines]
         products = db.table("nexus_products").select("id,shop_id,product_name,retail_price,wholesale_price,dealer_id").in_("id", product_ids).in_("shop_id", shop_ids).execute().data
         by_id = {p["id"]: p for p in products}
