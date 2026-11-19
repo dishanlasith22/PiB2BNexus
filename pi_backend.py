@@ -619,7 +619,7 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             if shop_ids: query = query.in_("shop_id", shop_ids)
             elif dealer_ids: query = query.in_("id", dealer_ids)
             else: raise HTTPException(403, "Shop or dealer access required.")
-        result = query.order("created_at", desc=True).limit(limit).execute()
+        order_column = {"inventory":"updated_at","stock_lots":"received_at","sales":"sold_at","orders":"requested_at","settlements":"scheduled_at","dealer_transactions":"scheduled_at"}.get(resource, "created_at")\n        result = (query.limit(limit).execute() if resource == "sale_items" else query.order(order_column, desc=True).limit(limit).execute())
         return {"ok": True, "items": result.data}
     except HTTPException:
         raise
@@ -630,6 +630,9 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             if scope == "shop_id":
                 ids = [x["id"] for x in identity["shops"]] + [x["shop_id"] for x in identity["dealers"]]
                 query = query.in_(scope, list(set(ids)))
+            elif scope == "branch_id":
+                branch_rows = db.table("nexus_branches").select("id").in_("shop_id", [x["id"] for x in identity["shops"]]).execute().data
+                query = query.in_(scope, [x["id"] for x in branch_rows])
             elif scope == "dealer_id":
                 query = query.in_(scope, [x["id"] for x in identity["dealers"]])
             else:
