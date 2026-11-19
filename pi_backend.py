@@ -764,3 +764,44 @@ def update_workspace_record(resource: str, record_id: str, body: DataUpdate, aut
         return {"ok":True,"item":result.data[0]}
     except HTTPException: raise
     except Exception: raise HTTPException(400, "Update failed. Check the supplied values.")
+
+
+class StockReceive(BaseModel):
+    branch_id: str
+    product_id: str
+    quantity: float = Field(gt=0, le=1000000)
+    unit_cost: float = Field(ge=0)
+    dealer_id: str | None = None
+
+@app.post("/api/inventory/receive")
+def receive_stock(body: StockReceive, authorization: str | None = Header(default=None)):
+    db, user, identity = workspace_identity(authorization)
+    if not identity["shops"]:
+        raise HTTPException(403, "Only a shop owner can receive stock.")
+    shop_id = identity["shops"][0]["id"]
+    try:
+        branch = db.table("nexus_branches").select("id,shop_id").eq("id",body.branch_id).eq("shop_id",shop_id).single().execute().data
+        product = db.table("nexus_products").select("id,shop_id,dealer_id,product_name").eq("id",body.product_id).eq("shop_id",shop_id).single().execute().data
+        dealer_id = body.dealer_id or product.get("dealer_id")
+        if not dealer_id:
+            raise HTTPException(400, "Choose the dealer supplying this product.")
+        db.table("nexus_dealers").select("id").eq("id",dealer_id).eq("shop_id",shop_id).single().execute()
+        inv = db.table("nexus_inventory").select("id,quantity").eq("branch_id",branch["id"]).eq("product_id",product["id"]).execute().data
+        new_qty = float(inv[0]["quantity"]) + body.quantity if inv else body.quantity
+        if inv:
+            db.table("nexus_inventory").update({"quantity":new_qty}).eq("id",inv[0]["id"]).execute()
+        else:
+            db.table("nexus_inventory").insert({"branch_id":branch["id"],"product_id":product["id"],"quantity":new_qty,"reorder_level":5}).execute()
+        db.table("nexus_stock_lots").insert({
+            "shop_id":shop_id,"branch_id":branch["id"],"dealer_id":dealer_id,"product_id":product["id"],
+            "received_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),
+            "quantity_received":body.quantity,"quantity_remaining":body.quantity,"unit_cost":body.unit_cost
+        }).execute()
+        db.table("nexus_ledger").insert({
+            "event_key":"RECEIVE-"+uuid.uuid4().hex,"event_type":"stock_received","shop_id":shop_id,
+            "branch_id":branch["id"],"dealer_id":dealer_id,"product_id":product["id"],
+            "quantity_delta":body.quantity,"unit_cost":body.unit_cost,"reference_type":"stock_receive"
+        }).execute()
+        return {"ok":True,"product":product["product_name"],"quantity_on_hand":new_qty}
+    except HTTPException: raise
+    except Exception: raise HTTPException(503, "Stock receipt failed. Verify branch, product, dealer and migration schema.")
