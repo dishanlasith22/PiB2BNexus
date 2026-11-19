@@ -58,3 +58,7 @@ footer{display:flex;justify-content:space-between;padding:18px 0 25px;border-top
 .referral-metrics .dash-card{display:grid;gap:8px;padding:14px}
 .referral-metrics small{color:#91a5bd;font-size:10px}
 .referral-metrics strong{font:600 19px 'Space Grotesk';color:#edc36d}
+
+.preview-role{display:grid;gap:7px;margin:14px 0;color:var(--muted,#8a98a9);font-size:11px}
+.preview-role select{width:100%;padding:9px 10px;border:1px solid var(--border,#354253);border-radius:9px;background:var(--surface,#111d2c);color:inherit;font:inherit}
+.preview-chip{white-space:nowrap}
