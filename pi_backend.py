@@ -746,6 +746,24 @@ def redeem_customer_referral(body: ReferralRedeemBody, authorization: str | None
         if referred["id"] == code["customer_id"]:
             raise HTTPException(400, "You cannot use your own referral code.")
 
+        # Refuse a referral that would create a loop in this shop's three-level tree.
+        ancestor_id = code["customer_id"]
+        visited = {referred["id"]}
+        while ancestor_id:
+            if ancestor_id in visited:
+                raise HTTPException(400, "This referral would create a cycle in the shop referral network.")
+            visited.add(ancestor_id)
+            parent_rows = (
+                db.table("nexus_customer_referrals")
+                .select("referrer_customer_id")
+                .eq("shop_id", code["shop_id"])
+                .eq("referred_customer_id", ancestor_id)
+                .limit(1)
+                .execute()
+                .data
+            )
+            ancestor_id = parent_rows[0]["referrer_customer_id"] if parent_rows else None
+
         db.table("nexus_customer_referrals").insert({
             "shop_id": code["shop_id"],
             "referral_code_id": code["id"],
