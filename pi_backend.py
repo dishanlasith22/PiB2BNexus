@@ -676,11 +676,27 @@ def get_customer_referrals(authorization: str | None = Header(default=None)):
                     "name": referred.get("display_name") or referred.get("pi_username") or "Pi Pioneer",
                     "created_at": row.get("created_at"),
                 })
+            reward_rows = (
+                db.table("nexus_customer_referral_rewards")
+                .select("level,reward_amount,status")
+                .eq("shop_id", shop["id"])
+                .eq("beneficiary_customer_id", customer["id"])
+                .execute()
+                .data
+            )
+            reward_summary = {
+                "level_1": round(sum(float(x["reward_amount"]) for x in reward_rows if x["level"] == 1), 4),
+                "level_2": round(sum(float(x["reward_amount"]) for x in reward_rows if x["level"] == 2), 4),
+                "level_3": round(sum(float(x["reward_amount"]) for x in reward_rows if x["level"] == 3), 4),
+                "pending": round(sum(float(x["reward_amount"]) for x in reward_rows if x["status"] == "pending"), 4),
+                "paid": round(sum(float(x["reward_amount"]) for x in reward_rows if x["status"] == "paid"), 4),
+            }
             output.append({
                 **shop,
                 "referral_code": code["referral_code"],
                 "referral_count": len(referrals),
                 "referrals": referrals,
+                "reward_summary": reward_summary,
             })
         return {"ok": True, "shops": output}
     except HTTPException:
@@ -884,6 +900,38 @@ def create_sale(body: SaleCreate, authorization: str | None = Header(default=Non
                 "quantity_delta": -item["quantity"], "unit_cost": item["unit_cost_snapshot"],
                 "reference_type": "sale", "reference_id": sale["id"]
             }).execute()
+
+        # Create a three-level reward ledger only for sales recorded as paid.
+        if body.customer_id and body.payment_status == "paid":
+            current_customer_id = body.customer_id
+            commission_rates = (0.005, 0.003, 0.002)
+            for level, rate in enumerate(commission_rates, start=1):
+                parent_rows = (
+                    db.table("nexus_customer_referrals")
+                    .select("referrer_customer_id")
+                    .eq("shop_id", branch["shop_id"])
+                    .eq("referred_customer_id", current_customer_id)
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+                if not parent_rows:
+                    break
+                beneficiary_id = parent_rows[0]["referrer_customer_id"]
+                reward_amount = round(total * rate, 4)
+                if reward_amount > 0:
+                    db.table("nexus_customer_referral_rewards").insert({
+                        "shop_id": branch["shop_id"],
+                        "sale_id": sale["id"],
+                        "beneficiary_customer_id": beneficiary_id,
+                        "referred_customer_id": body.customer_id,
+                        "level": level,
+                        "commission_rate": rate,
+                        "sale_total": total,
+                        "reward_amount": reward_amount,
+                        "status": "pending",
+                    }).execute()
+                current_customer_id = beneficiary_id
         return {"ok": True, "sale": sale, "items": items}
     except HTTPException:
         raise
