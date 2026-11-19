@@ -43,7 +43,7 @@ main{flex:1;min-height:0}
  const payBtn=document.getElementById("pay");
  const status=document.getElementById("status");
  const frame=document.getElementById("workspace");
- let piInit=null, sessionToken="", config={payments_enabled:false,sandbox:true};
+ let piInit=null, sessionToken="", incompletePayment=null, config={payments_enabled:false,sandbox:true};
  const say=(message)=>{status.textContent=message;};
  async function request(path,options={}){
    const response=await fetch(API+path,options);
@@ -59,7 +59,7 @@ main{flex:1;min-height:0}
  }
  async function initPi(){
    if(!window.Pi)throw new Error("Pi SDK not found. Open this registered app inside Pi Browser.");
-   if(!piInit)piInit=window.Pi.init({version:"2.0"});
+   if(!piInit)piInit=window.Pi.init({version:"2.0",sandbox:config.sandbox===true});
    await piInit;
  }
  async function signIn(){
@@ -67,8 +67,9 @@ main{flex:1;min-height:0}
    try{
      await initPi();
      say("Approve the sign-in request in Pi Browser...");
-     const auth=await window.Pi.authenticate(["username"],payment=>{
-       console.warn("Incomplete payment callback",payment);
+     const scopes=config.payments_enabled?["username","payments"]:["username"];
+     const auth=await window.Pi.authenticate(scopes,payment=>{
+       incompletePayment=payment;
      });
      if(!auth||!auth.accessToken)throw new Error("Pi did not return an access token.");
      say("Verifying your Pioneer account...");
@@ -81,6 +82,13 @@ main{flex:1;min-height:0}
        throw new Error("The backend did not return a verified session.");
      sessionStorage.setItem("pib2bnexus_session",verified.app_session_token);
      loadWorkspace(verified.app_session_token);
+     if(incompletePayment&&incompletePayment.identifier&&incompletePayment.transaction&&incompletePayment.transaction.txid){
+       try{
+         await request("/payments/complete",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+verified.app_session_token},body:JSON.stringify({paymentId:incompletePayment.identifier,txid:incompletePayment.transaction.txid})});
+         say("An earlier Pi payment was successfully completed.");
+       }catch(error){say("An earlier Pi payment needs attention: "+error.message);}
+       incompletePayment=null;
+     }
      loginBtn.textContent="Signed in as @"+verified.user.username;
      loginBtn.disabled=true;
      payBtn.hidden=!config.payments_enabled;
