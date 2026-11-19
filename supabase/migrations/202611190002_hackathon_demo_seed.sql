@@ -37,6 +37,8 @@ create table if not exists public.nexus_dealer_transactions (
 create index if not exists nexus_sale_items_sale_idx on public.nexus_sale_items(sale_id);
 create index if not exists nexus_stock_lots_fifo_idx on public.nexus_stock_lots(shop_id,product_id,received_at);
 create index if not exists nexus_dealer_transactions_date_idx on public.nexus_dealer_transactions(transaction_date,scheduled_at);
+create unique index if not exists nexus_sale_items_sale_product_uq on public.nexus_sale_items(sale_id,product_id);
+create unique index if not exists nexus_stock_lots_opening_uq on public.nexus_stock_lots(shop_id,branch_id,product_id,received_at);
 alter table public.nexus_sale_items enable row level security;
 alter table public.nexus_stock_lots enable row level security;
 alter table public.nexus_dealer_transactions enable row level security;
@@ -234,6 +236,12 @@ update public.nexus_stock_lots lot set quantity_remaining = greatest(0, lot.quan
 from (select si.product_id, sum(si.quantity) qty from public.nexus_sale_items si
  join public.nexus_sales sa on sa.id=si.sale_id where sa.receipt_no like 'HK-SALE-%' group by si.product_id) sold
 where lot.product_id=sold.product_id and lot.is_sample=true;
+
+insert into public.nexus_inventory(branch_id,product_id,quantity,reorder_level,is_sample)
+select branch_id,product_id,sum(quantity_remaining),10,true
+from public.nexus_stock_lots where is_sample=true
+group by branch_id,product_id
+on conflict(branch_id,product_id) do update set quantity=excluded.quantity,updated_at=now();
 
 -- Reconcile sample receipts to their two item lines and record stock movements.
 update public.nexus_sales sa set subtotal=x.line_total,total=x.line_total
