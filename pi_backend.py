@@ -860,6 +860,8 @@ def create_sale(body: SaleCreate, authorization: str | None = Header(default=Non
     db, user, identity = workspace_identity(authorization)
     if not identity["shops"]:
         raise HTTPException(403, "Only a registered shop owner can create POS sales.")
+    if body.payment_method == "Pi" and body.payment_status == "paid":
+        raise HTTPException(400, "Pi sales cannot be marked paid until the Pi Platform transaction is verified.")
     shop_ids = [x["id"] for x in identity["shops"]]
     try:
         branch = db.table("nexus_branches").select("id,shop_id").eq("id", body.branch_id).in_("shop_id", shop_ids).single().execute().data
