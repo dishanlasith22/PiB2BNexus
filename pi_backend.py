@@ -225,7 +225,8 @@ def pi_login_page():
         "frame-ancestors 'self' https://*.pinet.com https://*.minepi.com; "
         "base-uri 'self'; object-src 'none'"
     )
-    response.headers.pop("X-Frame-Options", None)
+    if "X-Frame-Options" in response.headers:
+        del response.headers["X-Frame-Options"]
     return response
 
 
