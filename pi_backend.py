@@ -501,6 +501,7 @@ class SaleLine(BaseModel):
 
 class SaleCreate(BaseModel):
     branch_id: str
+    customer_id: str | None = None
     lines: list[SaleLine] = Field(min_length=1, max_length=100)
     discount: float = Field(default=0, ge=0)
     payment_method: str = Field(default="Cash", pattern="^(Cash|Card|Pi)$")
@@ -588,66 +589,166 @@ def get_workspace(authorization: str | None = Header(default=None)):
 
 @app.get("/api/referrals")
 def get_customer_referrals(authorization: str | None = Header(default=None)):
-    """List each shop where this Pioneer has a paid customer sale and ensure a unique per-shop code."""
+    """Return eligible shop referral codes and the customers linked to each code."""
     db, user, identity = workspace_identity(authorization)
     if not identity["customers"]:
         raise HTTPException(403, "Register a customer profile before using referrals.")
     customer = identity["customers"][0]
     try:
-        sales = db.table("nexus_sales").select("shop_id").eq("customer_id", customer["id"]).eq("payment_status", "paid").execute().data
+        sales = (
+            db.table("nexus_sales")
+            .select("shop_id")
+            .eq("customer_id", customer["id"])
+            .eq("payment_status", "paid")
+            .execute()
+            .data
+        )
         shop_ids = list({row["shop_id"] for row in sales if row.get("shop_id")})
         if not shop_ids:
             return {"ok": True, "shops": []}
-        shop_rows = db.table("nexus_shops").select("id,shop_name,shop_category").in_("id", shop_ids).execute().data
+
+        shop_rows = (
+            db.table("nexus_shops")
+            .select("id,shop_name,shop_category")
+            .in_("id", shop_ids)
+            .order("shop_name")
+            .execute()
+            .data
+        )
         output = []
         for shop in shop_rows:
-            code_rows = db.table("nexus_customer_referral_codes").select("id,referral_code").eq("shop_id", shop["id"]).eq("customer_id", customer["id"]).limit(1).execute().data
+            code_rows = (
+                db.table("nexus_customer_referral_codes")
+                .select("id,referral_code")
+                .eq("shop_id", shop["id"])
+                .eq("customer_id", customer["id"])
+                .limit(1)
+                .execute()
+                .data
+            )
             if code_rows:
                 code = code_rows[0]
             else:
                 new_code = "NEX-" + uuid.uuid4().hex[:9].upper()
                 try:
                     code = db.table("nexus_customer_referral_codes").insert({
-                        "shop_id": shop["id"], "customer_id": customer["id"], "referral_code": new_code
+                        "shop_id": shop["id"],
+                        "customer_id": customer["id"],
+                        "referral_code": new_code,
                     }).execute().data[0]
                 except Exception:
-                    code = db.table("nexus_customer_referral_codes").select("id,referral_code").eq("shop_id", shop["id"]).eq("customer_id", customer["id"]).single().execute().data
-            referrals = db.table("nexus_customer_referrals").select("id,referred_customer_id,created_at").eq("shop_id", shop["id"]).eq("referrer_customer_id", customer["id"]).execute().data
-            output.append({**shop, "referral_code": code["referral_code"], "referral_count": len(referrals)})
+                    # A concurrent request may have created the unique shop/customer code.
+                    code = (
+                        db.table("nexus_customer_referral_codes")
+                        .select("id,referral_code")
+                        .eq("shop_id", shop["id"])
+                        .eq("customer_id", customer["id"])
+                        .single()
+                        .execute()
+                        .data
+                    )
+
+            referral_rows = (
+                db.table("nexus_customer_referrals")
+                .select("id,referred_customer_id,created_at")
+                .eq("shop_id", shop["id"])
+                .eq("referrer_customer_id", customer["id"])
+                .order("created_at", desc=True)
+                .execute()
+                .data
+            )
+            referred_ids = [row["referred_customer_id"] for row in referral_rows]
+            referred_rows = []
+            if referred_ids:
+                referred_rows = (
+                    db.table("nexus_customers")
+                    .select("id,pi_username,display_name")
+                    .in_("id", referred_ids)
+                    .execute()
+                    .data
+                )
+            referred_by_id = {row["id"]: row for row in referred_rows}
+            referrals = []
+            for row in referral_rows:
+                referred = referred_by_id.get(row["referred_customer_id"], {})
+                referrals.append({
+                    "id": row["id"],
+                    "name": referred.get("display_name") or referred.get("pi_username") or "Pi Pioneer",
+                    "created_at": row.get("created_at"),
+                })
+            output.append({
+                **shop,
+                "referral_code": code["referral_code"],
+                "referral_count": len(referrals),
+                "referrals": referrals,
+            })
         return {"ok": True, "shops": output}
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(503, "Could not load customer referral shops. Confirm the referral database migration is applied.")
+        raise HTTPException(
+            503,
+            "Could not load customer referrals. Confirm the referral database migration is applied."
+        )
+
 
 @app.post("/api/referrals/redeem")
 def redeem_customer_referral(body: ReferralRedeemBody, authorization: str | None = Header(default=None)):
-    """Attach the signed-in customer to the referrer's shop and record a one-time referral."""
+    """Link the signed-in customer to a referrer's shop using a one-time referral code."""
     db, user, identity = workspace_identity(authorization)
     code_text = body.code.strip().upper()
     try:
-        codes = db.table("nexus_customer_referral_codes").select("id,shop_id,customer_id,referral_code").eq("referral_code", code_text).limit(1).execute().data
+        codes = (
+            db.table("nexus_customer_referral_codes")
+            .select("id,shop_id,customer_id,referral_code")
+            .eq("referral_code", code_text)
+            .limit(1)
+            .execute()
+            .data
+        )
         if not codes:
             raise HTTPException(404, "Referral code was not found.")
         code = codes[0]
         if identity["customers"]:
             referred = identity["customers"][0]
-            if referred["id"] == code["customer_id"]:
-                raise HTTPException(400, "You cannot use your own referral code.")
         else:
-            shop = db.table("nexus_shops").select("id").eq("id", code["shop_id"]).single().execute().data
+            shop = (
+                db.table("nexus_shops")
+                .select("id")
+                .eq("id", code["shop_id"])
+                .single()
+                .execute()
+                .data
+            )
             referred = db.table("nexus_customers").insert({
-                "pi_uid": user["uid"], "pi_username": user["username"],
-                "display_name": user["username"], "home_shop_id": shop["id"]
+                "pi_uid": user["uid"],
+                "pi_username": user["username"],
+                "display_name": user["username"],
+                "home_shop_id": shop["id"],
             }).execute().data[0]
+
         if referred["id"] == code["customer_id"]:
             raise HTTPException(400, "You cannot use your own referral code.")
+
         db.table("nexus_customer_referrals").insert({
-            "shop_id": code["shop_id"], "referral_code_id": code["id"],
-            "referrer_customer_id": code["customer_id"], "referred_customer_id": referred["id"]
+            "shop_id": code["shop_id"],
+            "referral_code_id": code["id"],
+            "referrer_customer_id": code["customer_id"],
+            "referred_customer_id": referred["id"],
         }).execute()
-        shop = db.table("nexus_shops").select("id,shop_name").eq("id", code["shop_id"]).single().execute().data
-        return {"ok": True, "shop": shop, "message": "Referral linked to " + shop["shop_name"] + "."}
+        shop = (
+            db.table("nexus_shops")
+            .select("id,shop_name")
+            .eq("id", code["shop_id"])
+            .single()
+            .execute()
+            .data
+        )
+        return {
+            "ok": True,
+            "shop": shop,
+            "message": "Referral linked to " + shop["shop_name"] + ".",
+        }
     except HTTPException:
         raise
     except Exception as exc:
@@ -655,7 +756,9 @@ def redeem_customer_referral(body: ReferralRedeemBody, authorization: str | None
         if "duplicate" in message or "unique" in message or "23505" in message:
             raise HTTPException(409, "This customer is already linked to a referral for this shop.")
         raise HTTPException(503, "Could not save this referral. Please try again.")
-\n@app.get("/api/data/{resource}")
+
+
+@app.get("/api/data/{resource}")
 def list_workspace_data(resource: str, authorization: str | None = Header(default=None), limit: int = 100):
     if resource not in RESOURCE_TABLES:
         raise HTTPException(404, "Unknown workspace resource.")
@@ -761,6 +864,7 @@ def create_sale(body: SaleCreate, authorization: str | None = Header(default=Non
         receipt = "PIB-" + uuid.uuid4().hex[:12].upper()
         sale = db.table("nexus_sales").insert({
             "receipt_no": receipt, "shop_id": branch["shop_id"], "branch_id": branch["id"],
+            "customer_id": body.customer_id,
             "subtotal": subtotal, "discount": body.discount, "total": total,
             "payment_method": body.payment_method, "payment_status": body.payment_status,
             "pi_payment_id": body.pi_payment_id, "created_by": user["uid"]
