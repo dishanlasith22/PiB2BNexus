@@ -181,8 +181,8 @@ join catalog c on c.category=s.shop_category
 on conflict(sku) do nothing;
 
 -- 20 customers per shop, all English display names.
-insert into public.nexus_customers(pi_username,display_name,home_shop_id,is_sample)
-select 'hk_customer_'||lpad(sno::text,3,'0')||'_'||lpad(cno::text,2,'0'),
+insert into public.nexus_customers(pi_uid,pi_username,display_name,home_shop_id,is_sample)
+select 'sample-hk-'||lpad(sno::text,3,'0')||'-'||lpad(cno::text,2,'0'), 'hk_customer_'||lpad(sno::text,3,'0')||'_'||lpad(cno::text,2,'0'),
  (array['Alex Morgan','Jordan Lee','Taylor Smith','Casey Brown','Riley Wilson','Jamie Taylor','Avery Martin','Morgan Clark','Cameron Lewis','Drew Walker','Skyler Hall','Quinn Allen','Reese Young','Parker King','Rowan Wright','Emerson Scott','Hayden Green','Finley Baker','Dakota Adams','Harper Nelson'])[cno],
  s.id,true
 from generate_series(1,20) sno cross join generate_series(1,20) cno
@@ -200,7 +200,7 @@ on conflict do nothing;
 with sale_seed as (
  select sno,day_no,slot,
   (current_date-(30-day_no))::date as sale_date,
-  ((sno-1)*20+((day_no*4+slot-1)%20)+1) as customer_no,
+  (((day_no*4+slot-1)%20)+1) as customer_no,
   ((day_no+slot-2)%10)+1 as dealer_no
  from generate_series(1,20) sno cross join generate_series(1,30) day_no cross join generate_series(1,4) slot
 ), resolved as (
@@ -226,8 +226,19 @@ on conflict(receipt_no) do nothing;
 insert into public.nexus_sale_items(sale_id,product_id,dealer_id,quantity,unit_price,unit_cost_snapshot,line_total,is_sample)
 select sa.id,p.id,p.dealer_id,1,p.retail_price,p.wholesale_price,p.retail_price,true
 from public.nexus_sales sa join public.nexus_products p on p.dealer_id=sa.dealer_id
-where sa.receipt_no like 'HK-SALE-%' and p.sku like (select d.dealer_code||'-SKU-01' from public.nexus_dealers d where d.id=sa.dealer_id)
+where sa.receipt_no like 'HK-SALE-%' and p.sku in ((select d.dealer_code||'-SKU-01' from public.nexus_dealers d where d.id=sa.dealer_id),(select d.dealer_code||'-SKU-02' from public.nexus_dealers d where d.id=sa.dealer_id))
 on conflict do nothing;
+
+-- Reconcile sample receipts to their two item lines and record stock movements.
+update public.nexus_sales sa set subtotal=x.line_total,total=x.line_total
+from (select sale_id,round(sum(line_total),2) line_total from public.nexus_sale_items group by sale_id) x
+where sa.id=x.sale_id and sa.receipt_no like 'HK-SALE-%';
+
+insert into public.nexus_ledger(event_key,event_type,shop_id,branch_id,dealer_id,product_id,quantity_delta,unit_cost,reference_type,reference_id,is_sample)
+select 'HK-SALE-STOCK-'||si.id::text,'sale',sa.shop_id,sa.branch_id,si.dealer_id,si.product_id,-si.quantity,si.unit_cost_snapshot,'sale',sa.id,true
+from public.nexus_sale_items si join public.nexus_sales sa on sa.id=si.sale_id
+where sa.receipt_no like 'HK-SALE-%'
+on conflict(event_key) do nothing;
 
 -- 23:50 Sri Lanka time dealer transactions for every sample dealer, every day in 30-day period.
 insert into public.nexus_dealer_transactions(transaction_no,dealer_id,shop_id,transaction_date,gross_sold_cost,dealer_fee_rate,dealer_fee,net_payable,scheduled_at,status,is_sample)
