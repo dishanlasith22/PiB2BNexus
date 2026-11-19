@@ -619,7 +619,8 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             if shop_ids: query = query.in_("shop_id", shop_ids)
             elif dealer_ids: query = query.in_("id", dealer_ids)
             else: raise HTTPException(403, "Shop or dealer access required.")
-        order_column = {"inventory":"updated_at","stock_lots":"received_at","sales":"sold_at","orders":"requested_at","settlements":"scheduled_at","dealer_transactions":"scheduled_at"}.get(resource, "created_at")\n        result = (query.limit(limit).execute() if resource == "sale_items" else query.order(order_column, desc=True).limit(limit).execute())
+        order_column = {"inventory":"updated_at","stock_lots":"received_at","sales":"sold_at","orders":"requested_at","settlements":"scheduled_at","dealer_transactions":"scheduled_at"}.get(resource, "created_at")
+        result = (query.limit(limit).execute() if resource == "sale_items" else query.order(order_column, desc=True).limit(limit).execute())
         return {"ok": True, "items": result.data}
     except HTTPException:
         raise
