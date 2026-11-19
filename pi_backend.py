@@ -688,3 +688,71 @@ def create_sale(body: SaleCreate, authorization: str | None = Header(default=Non
     except Exception:
         raise HTTPException(503, "Sale could not be saved. Inventory may have changed; refresh and retry.")
 
+
+
+class DataWrite(BaseModel):
+    data: dict[str, Any]
+
+class DataUpdate(BaseModel):
+    data: dict[str, Any]
+
+WRITE_FIELDS = {
+    "products": {"sku","barcode","product_name","category","unit","wholesale_price","retail_price","image_url","is_active","dealer_id"},
+    "promotions": {"product_id","title","description","image_url","original_price","offer_price","starts_at","ends_at","status"},
+    "orders": {"order_no","dealer_id","branch_id","status","total_cost"},
+    "branches": {"branch_code","branch_name","address"},
+}
+
+@app.post("/api/data/{resource}")
+def create_workspace_record(resource: str, body: DataWrite, authorization: str | None = Header(default=None)):
+    if resource not in WRITE_FIELDS:
+        raise HTTPException(404, "This resource cannot be created through this endpoint.")
+    db, user, identity = workspace_identity(authorization)
+    if not identity["shops"]:
+        raise HTTPException(403, "Only registered shop owners can create these records.")
+    shop = identity["shops"][0]
+    payload = {k:v for k,v in body.data.items() if k in WRITE_FIELDS[resource]}
+    try:
+        if resource == "products":
+            if not payload.get("sku") or not payload.get("product_name") or not payload.get("category"):
+                raise HTTPException(400, "SKU, product name and category are required.")
+            if payload.get("dealer_id"):
+                if payload["dealer_id"] not in [d["id"] for d in db.table("nexus_dealers").select("id").eq("shop_id",shop["id"]).execute().data]:
+                    raise HTTPException(403, "Dealer does not belong to this shop.")
+            payload["shop_id"] = shop["id"]
+        elif resource == "promotions":
+            if not payload.get("title") or not payload.get("image_url") or not payload.get("offer_price") or not payload.get("starts_at") or not payload.get("ends_at"):
+                raise HTTPException(400, "Title, image, offer price and campaign dates are required.")
+            payload["shop_id"] = shop["id"]
+        elif resource == "orders":
+            if not payload.get("order_no") or not payload.get("dealer_id"):
+                raise HTTPException(400, "Order number and dealer are required.")
+            dealer = db.table("nexus_dealers").select("id").eq("id",payload["dealer_id"]).eq("shop_id",shop["id"]).single().execute().data
+            payload.update({"shop_id":shop["id"],"status":"requested"})
+        elif resource == "branches":
+            if not payload.get("branch_code") or not payload.get("branch_name"):
+                raise HTTPException(400, "Branch code and name are required.")
+            payload["shop_id"] = shop["id"]
+        result = db.table(RESOURCE_TABLES[resource][0]).insert(payload).execute()
+        return {"ok":True,"item":result.data[0]}
+    except HTTPException: raise
+    except Exception: raise HTTPException(400, "Record could not be created. Check duplicate codes, required fields and database schema.")
+
+@app.patch("/api/data/{resource}/{record_id}")
+def update_workspace_record(resource: str, record_id: str, body: DataUpdate, authorization: str | None = Header(default=None)):
+    if resource not in ("products","promotions","orders","branches"):
+        raise HTTPException(404, "This resource cannot be updated.")
+    db, user, identity = workspace_identity(authorization)
+    if not identity["shops"]:
+        raise HTTPException(403, "Shop owner access required.")
+    fields = WRITE_FIELDS[resource] - ({"dealer_id"} if resource != "orders" else set())
+    payload = {k:v for k,v in body.data.items() if k in fields}
+    if not payload:
+        raise HTTPException(400, "No supported fields supplied.")
+    table = RESOURCE_TABLES[resource][0]
+    try:
+        result = db.table(table).update(payload).eq("id",record_id).eq("shop_id",identity["shops"][0]["id"]).execute()
+        if not result.data: raise HTTPException(404, "Record not found in this shop.")
+        return {"ok":True,"item":result.data[0]}
+    except HTTPException: raise
+    except Exception: raise HTTPException(400, "Update failed. Check the supplied values.")
