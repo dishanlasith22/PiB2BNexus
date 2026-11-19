@@ -595,17 +595,29 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             if not identity["shops"]: raise HTTPException(403, "Shop owner access required.")
             query = query.in_("shop_id", [x["id"] for x in identity["shops"]])
         elif resource == "products":
-            shop_ids = [x["id"] for x in identity["shops"]] + [x["shop_id"] for x in identity["dealers"]]
-            if not shop_ids: raise HTTPException(403, "Shop or dealer access required.")
-            query = query.in_("shop_id", list(set(shop_ids)))
+            if identity["shops"]:
+                query = query.in_("shop_id", [x["id"] for x in identity["shops"]])
+            elif identity["dealers"]:
+                query = query.in_("dealer_id", [x["id"] for x in identity["dealers"]])
+            else:
+                raise HTTPException(403, "Shop or dealer access required.")
         elif resource == "sales" and identity["customers"]:
             query = query.in_("customer_id", [x["id"] for x in identity["customers"]])
         elif resource == "promotions" and identity["customers"] and not identity["shops"] and not identity["dealers"]:
             query = query.eq("status", "active").gte("ends_at", date.today().isoformat())
         elif resource in ("inventory","orders","sales","promotions","ledger","stock_lots","dealer_transactions"):
-            shop_ids = [x["id"] for x in identity["shops"]] + [x["shop_id"] for x in identity["dealers"]]
-            if not shop_ids: raise HTTPException(403, "Shop or dealer access required.")
-            query = query.in_("shop_id", list(set(shop_ids)))
+            if resource == "inventory":
+                if not identity["shops"]: raise HTTPException(403, "Shop owner access required.")
+                branch_rows = db.table("nexus_branches").select("id").in_("shop_id", [x["id"] for x in identity["shops"]]).execute().data
+                query = query.in_("branch_id", [x["id"] for x in branch_rows])
+            elif resource == "orders" and identity["dealers"] and not identity["shops"]:
+                query = query.in_("dealer_id", [x["id"] for x in identity["dealers"]])
+            elif resource in ("ledger","stock_lots","dealer_transactions") and identity["dealers"] and not identity["shops"]:
+                query = query.in_("dealer_id", [x["id"] for x in identity["dealers"]])
+            else:
+                shop_ids = [x["id"] for x in identity["shops"]]
+                if not shop_ids: raise HTTPException(403, "Shop owner access required.")
+                query = query.in_("shop_id", shop_ids)
         elif resource in ("settlements","sale_items"):
             dealer_ids = [x["id"] for x in identity["dealers"]]
             if identity["shops"]:
