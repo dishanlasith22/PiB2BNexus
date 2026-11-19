@@ -15,6 +15,7 @@ import hashlib
 import base64
 
 import requests
+from supabase import create_client, Client
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,21 @@ from pydantic import BaseModel, Field
 
 
 PI_API_BASE = "https://api.minepi.com/v2"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+_supabase: Client | None = None
+
+
+def get_supabase() -> Client:
+    global _supabase
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(503, "Supabase backend credentials are not configured.")
+    if _supabase is None:
+        try:
+            _supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        except Exception:
+            raise HTTPException(503, "Supabase connection could not be initialized.")
+    return _supabase
 PI_APP_STUDIO_LOGIN_URL = "https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login"
 
 PI_API_KEY = os.getenv("PI_API_KEY", "").strip()
@@ -50,6 +66,7 @@ app.add_middleware(
         "https://pib2bnexus.onrender.com",
         "https://pib2bnexus.com",
         "https://www.pib2bnexus.com",
+        "https://pib2bnexus-web-preview.onrender.com",
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
@@ -406,3 +423,63 @@ def complete_payment(
         "ok": True,
         "payment": result
     }
+
+
+@app.get("/health/supabase")
+def supabase_health():
+    """Check server-side database connectivity without exposing credentials or data."""
+    db = get_supabase()
+    try:
+        result = db.table("nexus_shops").select("id", count="exact").limit(1).execute()
+        return {"ok": True, "connected": True, "sample_query_count": result.count}
+    except Exception:
+        raise HTTPException(503, "Supabase is configured but the schema is not ready or the query failed.")
+
+
+@app.get("/api/me")
+def api_me(authorization: str | None = Header(default=None)):
+    """Resolve the signed Pi identity to database records; never trust a browser-supplied UID."""
+    user = verified_app_user(authorization)
+    db = get_supabase()
+    try:
+        customer = db.table("nexus_customers").select("id,pi_uid,pi_username,display_name,home_shop_id").eq("pi_uid", user["uid"]).limit(1).execute().data
+        dealer = db.table("nexus_dealers").select("id,dealer_code,business_name,shop_id").eq("pi_uid", user["uid"]).limit(1).execute().data
+        shops = db.table("nexus_shops").select("id,shop_code,shop_name,shop_category").eq("owner_pi_uid", user["uid"]).execute().data
+        return {"ok": True, "user": user, "customer": customer[0] if customer else None,
+                "dealer": dealer[0] if dealer else None, "owned_shops": shops}
+    except Exception:
+        raise HTTPException(503, "Could not load the signed-in user's database profile.")
+
+
+@app.get("/api/shops")
+def api_shops():
+    """Return only the curated sample shop directory; private business records stay protected."""
+    db = get_supabase()
+    try:
+        rows = db.table("nexus_shops").select("id,shop_code,shop_name,shop_category,address").eq("is_sample", True).order("shop_name").execute().data
+        return {"ok": True, "shops": rows}
+    except Exception:
+        raise HTTPException(503, "Shop directory is unavailable; check that Supabase migrations have been applied.")
+
+
+@app.get("/api/shops/{shop_id}/summary")
+def api_shop_summary(shop_id: str, authorization: str | None = Header(default=None)):
+    """Shop/dealer data is returned only when the verified Pi UID owns the shop or its dealer account."""
+    user = verified_app_user(authorization)
+    db = get_supabase()
+    try:
+        shop = db.table("nexus_shops").select("id,shop_code,shop_name,shop_category,owner_pi_uid").eq("id", shop_id).limit(1).execute().data
+        if not shop:
+            raise HTTPException(404, "Shop not found.")
+        owned = shop[0].get("owner_pi_uid") == user["uid"]
+        dealer_rows = db.table("nexus_dealers").select("id,dealer_code,business_name").eq("shop_id", shop_id).eq("pi_uid", user["uid"]).execute().data
+        if not owned and not dealer_rows:
+            raise HTTPException(403, "This Pi account is not linked to this shop or its dealer accounts.")
+        sales = db.table("nexus_sales").select("id,receipt_no,total,payment_status,sold_at").eq("shop_id", shop_id).order("sold_at", desc=True).limit(100).execute().data if owned else []
+        products = db.table("nexus_products").select("id,sku,product_name,category,wholesale_price,retail_price").eq("shop_id", shop_id).limit(500).execute().data
+        return {"ok": True, "shop": {k:v for k,v in shop[0].items() if k != "owner_pi_uid"},
+                "dealer_accounts": dealer_rows, "products": products, "recent_sales": sales}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, "Could not load authorized shop data.")
