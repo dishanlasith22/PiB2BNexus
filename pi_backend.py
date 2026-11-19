@@ -608,8 +608,11 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             query = query.in_("shop_id", list(set(shop_ids)))
         elif resource in ("settlements","sale_items"):
             dealer_ids = [x["id"] for x in identity["dealers"]]
-            if not dealer_ids: raise HTTPException(403, "Dealer access required.")
-            query = query.in_("dealer_id", dealer_ids)
+            if identity["shops"]:
+                linked = db.table("nexus_dealers").select("id").in_("shop_id", [x["id"] for x in identity["shops"]]).execute().data
+                dealer_ids += [x["id"] for x in linked]
+            if not dealer_ids: raise HTTPException(403, "Dealer or shop owner access required.")
+            query = query.in_("dealer_id", list(set(dealer_ids)))
         elif resource == "customers":
             if not identity["shops"]: raise HTTPException(403, "Shop owner access required.")
             query = query.in_("home_shop_id", [x["id"] for x in identity["shops"]])
