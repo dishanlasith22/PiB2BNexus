@@ -738,7 +738,7 @@ def create_sale(body: SaleCreate, authorization: str | None = Header(default=Non
     shop_ids = [x["id"] for x in identity["shops"]]
     try:
         branch = db.table("nexus_branches").select("id,shop_id").eq("id", body.branch_id).in_("shop_id", shop_ids).single().execute().data
-        product_ids = [line.product_id for line in body.lines]
+        if body.customer_id:\n            customer = db.table("nexus_customers").select("id").eq("id", body.customer_id).eq("home_shop_id", branch["shop_id"]).single().execute().data\n        product_ids = [line.product_id for line in body.lines]
         products = db.table("nexus_products").select("id,shop_id,product_name,retail_price,wholesale_price,dealer_id").in_("id", product_ids).in_("shop_id", shop_ids).execute().data
         by_id = {p["id"]: p for p in products}
         if len(by_id) != len(set(product_ids)):
