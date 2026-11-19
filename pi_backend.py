@@ -598,6 +598,10 @@ def list_workspace_data(resource: str, authorization: str | None = Header(defaul
             shop_ids = [x["id"] for x in identity["shops"]] + [x["shop_id"] for x in identity["dealers"]]
             if not shop_ids: raise HTTPException(403, "Shop or dealer access required.")
             query = query.in_("shop_id", list(set(shop_ids)))
+        elif resource == "sales" and identity["customers"]:
+            query = query.in_("customer_id", [x["id"] for x in identity["customers"]])
+        elif resource == "promotions" and identity["customers"] and not identity["shops"] and not identity["dealers"]:
+            query = query.eq("status", "active").gte("ends_at", date.today().isoformat())
         elif resource in ("inventory","orders","sales","promotions","ledger","stock_lots","dealer_transactions"):
             shop_ids = [x["id"] for x in identity["shops"]] + [x["shop_id"] for x in identity["dealers"]]
             if not shop_ids: raise HTTPException(403, "Shop or dealer access required.")
