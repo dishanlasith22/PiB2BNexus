@@ -45,3 +45,11 @@ footer{display:flex;justify-content:space-between;padding:18px 0 25px;border-top
 @media(max-width:650px){.registration{margin:25px 15px;padding:20px}.form-grid{grid-template-columns:1fr}.toolbar-actions{width:100%}.toolbar-actions .btn{flex:1}.cart-line{grid-template-columns:1fr auto}.cart-line>strong{justify-self:end}.scanner-box{min-height:190px}}
 
 .referral-wrap{display:grid;gap:18px}.referral-redeem{display:grid;gap:14px}.referral-intro h2{margin:0 0 6px}.referral-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.referral-shop{display:grid;gap:18px}.referral-shop-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.referral-shop-head h3{margin:7px 0 4px}.referral-count{white-space:nowrap;border-radius:20px;padding:6px 10px;background:var(--surface-2,#f1f3f5);font-size:12px}.referral-code-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px dashed var(--border,#ccd2d8);border-radius:12px}.referral-code-row small,.referral-code-row strong{display:block}.referral-code-row strong{font-size:20px;letter-spacing:1.5px;margin-top:5px}.referral-actions{display:flex;flex-wrap:wrap;gap:9px}
+
+.referral-friends{border-top:1px solid var(--border,#ccd2d8);padding-top:12px}
+.referral-friends h4{margin:0 0 9px;font-size:13px}
+.referral-friends ul{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.referral-friends li{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+.referral-friends li small{color:#7a8490}
+.referral-intro{display:flex;align-items:center;justify-content:space-between;gap:12px}
+@media(max-width:600px){.referral-intro{align-items:flex-start;flex-direction:column}.referral-code-row{align-items:flex-start;flex-direction:column}.referral-code-row strong{font-size:18px}}
